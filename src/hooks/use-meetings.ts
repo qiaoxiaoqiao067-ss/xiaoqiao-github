@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 
-export type Meeting = { id:string; user_id:string; project_id:string|null; title:string; meeting_type:string; meeting_date:string|null; source_url:string|null; transcript:string|null; summary:string|null; decisions:string|null; next_actions:string|null; created_at:string; updated_at:string }
-export type MeetingInput = Omit<Meeting, "id"|"user_id"|"created_at"|"updated_at">
+export type Meeting = { id:string; user_id:string; project_id:string|null; linked_idea_id:string|null; title:string; meeting_type:string; meeting_date:string|null; source_url:string|null; transcript:string|null; summary:string|null; decisions:string|null; next_actions:string|null; created_at:string; updated_at:string }
+export type MeetingInput = Partial<Omit<Meeting, "id"|"user_id"|"created_at"|"updated_at">> & { title:string; meeting_type:string }
 
 export function useMeetings() {
   const supabase = useMemo(() => createClient(), [])

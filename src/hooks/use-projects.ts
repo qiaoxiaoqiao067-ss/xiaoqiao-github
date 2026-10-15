@@ -6,11 +6,11 @@ import { createClient } from "@/lib/supabase/client"
 export const PROJECT_STAGES = ["立项选题", "市场调研与对标", "Concept与故事大纲", "分集与剧本", "剧本修改", "剧本定稿", "角色与场景设计", "分镜", "视频制作", "后期与验收", "上架与复盘"] as const
 export type ProjectStatus = "active" | "deferred" | "paused" | "completed" | "archived"
 export type Project = {
-  id: string; user_id: string; content_id: string | null; title: string; market: string | null; genre: string | null
+  id: string; user_id: string; content_id: string | null; linked_idea_id: string | null; title: string; market: string | null; genre: string | null
   stage: string; progress: number; status: ProjectStatus; next_action: string | null; due_date: string | null
   risk: string | null; notes: string | null; created_at: string; updated_at: string
 }
-export type ProjectInput = Pick<Project, "title"> & Partial<Pick<Project, "market" | "genre" | "stage" | "progress" | "status" | "next_action" | "due_date" | "risk" | "notes" | "content_id">>
+export type ProjectInput = Pick<Project, "title"> & Partial<Pick<Project, "market" | "genre" | "stage" | "progress" | "status" | "next_action" | "due_date" | "risk" | "notes" | "content_id" | "linked_idea_id">>
 
 export function useProjects() {
   const supabase = useMemo(() => createClient(), [])
