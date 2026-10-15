@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { requireUser } from "@/lib/supabase/require-user"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -29,6 +30,9 @@ function standardizeTitle(title: string): string {
 
 export async function GET(request: NextRequest) {
   try {
+    const { user, response } = await requireUser()
+    if (response) return response
+
     const { searchParams } = new URL(request.url)
     const q = searchParams.get("q")
     const category = searchParams.get("category")
@@ -37,12 +41,12 @@ export async function GET(request: NextRequest) {
     const client = getClient()
 
     if (id) {
-      const { data, error } = await client.from("documents").select("*").eq("id", id).single()
+      const { data, error } = await client.from("documents").select("*").eq("id", id).eq("user_id", user.id).single()
       if (error) throw error
       return NextResponse.json({ document: data })
     }
 
-    let query = client.from("documents").select("*").order("updated_at", { ascending: false }).limit(50)
+    let query = client.from("documents").select("*").eq("user_id", user.id).order("updated_at", { ascending: false }).limit(50)
 
     if (q) {
       query = query.or(`title.ilike.%${q}%,content.ilike.%${q}%`)
@@ -61,10 +65,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { userId, title, content, category, tags, file_url, file_type } = body
+    const { user, response } = await requireUser()
+    if (response) return response
 
-    if (!userId || !title) {
+    const body = await request.json()
+    const { title, content, category, tags, file_url, file_type } = body
+
+    if (!title) {
       return NextResponse.json({ error: "Missing fields" }, { status: 400 })
     }
 
@@ -76,7 +83,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await client
       .from("documents")
       .insert({
-        user_id: userId,
+        user_id: user.id,
         title,
         standardized_title: standardizedTitle,
         content: content || "",
@@ -97,6 +104,9 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const { user, response } = await requireUser()
+    if (response) return response
+
     const body = await request.json()
     const { id, title, content, category, tags } = body
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 })
@@ -112,6 +122,7 @@ export async function PATCH(request: NextRequest) {
       .from("documents")
       .update(updates)
       .eq("id", id)
+      .eq("user_id", user.id)
       .select()
       .single()
 
@@ -124,12 +135,15 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const { user, response } = await requireUser()
+    if (response) return response
+
     const { searchParams } = new URL(request.url)
     const id = searchParams.get("id")
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 })
 
     const client = getClient()
-    const { error } = await client.from("documents").delete().eq("id", id)
+    const { error } = await client.from("documents").delete().eq("id", id).eq("user_id", user.id)
     if (error) throw error
     return NextResponse.json({ success: true })
   } catch (e: any) {

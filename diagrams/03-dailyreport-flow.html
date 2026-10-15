@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=1000">
+<title>日报操作流程图</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f8f9fb;display:flex;justify-content:center;padding:40px}
+.d{background:#fff;border-radius:16px;padding:48px;width:900px;box-shadow:0 2px 20px rgba(0,0,0,.06)}
+h1{text-align:center;font-size:24px;color:#1a1a2e;margin-bottom:36px}
+.flow{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:16px}
+.step{background:#fff;border:2px solid #e5e7eb;border-radius:12px;padding:18px 22px;text-align:center;min-width:130px;position:relative}
+.step-num{font-size:11px;font-weight:700;color:#6366f1;margin-bottom:4px}
+.step-title{font-size:14px;font-weight:700;color:#1a1a2e;margin-bottom:4px}
+.step-desc{font-size:11px;color:#888}
+.arrow-s{font-size:24px;color:#94a3b8;font-weight:700;flex-shrink:0}
+.special{background:#fef3c7;border-color:#f59e0b}
+.special .step-num{color:#d97706}
+.final{background:#ecfdf5;border-color:#10b981}
+.final .step-num{color:#059669}
+.draft{background:#f0f9ff;border-color:#3b82f6}
+.draft .step-num{color:#2563eb}
+.branch{display:flex;flex-direction:column;align-items:center;gap:8px}
+.branch-row{display:flex;gap:12px;align-items:center}
+.or-divider{font-size:11px;color:#888;padding:4px 12px;background:#fff;border-radius:20px;border:1px solid #e5e7eb}
+.note{text-align:center;font-size:12px;color:#999;margin-top:32px;padding-top:20px;border-top:1px solid #eee}
+</style>
+</head>
+<body>
+<div class="d">
+<h1>日报操作流程</h1>
+
+<div class="flow">
+  <!-- Step 1 -->
+  <div class="step">
+    <div class="step-num">步骤 1</div>
+    <div class="step-title">✏️ 填写简要内容</div>
+    <div class="step-desc">在四个板块中<br>输入关键词要点</div>
+  </div>
+
+  <div class="arrow-s">→</div>
+
+  <!-- Step 2 -->
+  <div class="step special">
+    <div class="step-num">步骤 2</div>
+    <div class="step-title">🪄 AI 完善</div>
+    <div class="step-desc">Claude 自动扩写<br>为完整日报格式</div>
+  </div>
+
+  <div class="arrow-s">→</div>
+
+  <!-- Step 3 -->
+  <div class="step">
+    <div class="step-num">步骤 3</div>
+    <div class="step-title">👀 审核修改</div>
+    <div class="step-desc">预览检查<br>必要时手动调整</div>
+  </div>
+
+  <div class="arrow-s">→</div>
+
+  <!-- Branch -->
+  <div class="branch">
+    <div class="branch-row">
+      <div class="step draft">
+        <div class="step-num">选项 A</div>
+        <div class="step-title">💾 保存草稿</div>
+        <div class="step-desc">可反复编辑<br>继续 AI 完善</div>
+      </div>
+      <div class="or-divider">或</div>
+      <div class="step final">
+        <div class="step-num">选项 B</div>
+        <div class="step-title">🔒 定稿归档</div>
+        <div class="step-desc">锁定为最终版<br>进入历史记录</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-s">→</div>
+
+  <!-- Step 5 -->
+  <div class="step">
+    <div class="step-num">步骤 4</div>
+    <div class="step-title">📤 发送飞书</div>
+    <div class="step-desc">确认后发送<br>至飞书群聊</div>
+  </div>
+</div>
+
+<p class="note">支持粘贴导入 · 历史记录可查看/重新编辑 · 周末自动跳过</p>
+</div>
+</body>
+</html>

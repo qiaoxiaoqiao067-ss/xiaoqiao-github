@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
+import { supabaseServerFetch } from "./server-fetch"
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -8,6 +9,9 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: {
+        fetch: supabaseServerFetch,
+      },
       cookies: {
         getAll() {
           return request.cookies.getAll()
@@ -35,6 +39,7 @@ export async function updateSession(request: NextRequest) {
     "/todos",
     "/reports",
     "/docs",
+    "/content",
     "/ai-learning",
     "/settings",
   ]

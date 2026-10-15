@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { AppLayout } from "@/components/layout/app-layout"
+import { PageHero } from "@/components/layout/page-hero"
 import {
   useReports,
   generateReportContent,
@@ -18,10 +19,14 @@ import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
 import { formatDate } from "@/lib/utils"
+import { useTodos } from "@/hooks/use-todos"
+import { useProjects } from "@/hooks/use-projects"
 import { FileText, Send, Save, CheckCircle, XCircle, ChevronDown, ChevronUp, ChevronRight, History, Edit3, Trash2, Loader2, Sparkles, Calendar, AlertCircle, Copy, Eye, Wand2, ClipboardPaste } from "lucide-react"
 
 export default function ReportsPage() {
   const { reports, todayDraft, loading, error, saveDraft, finalizeReport, deleteReport } = useReports()
+  const { todos } = useTodos()
+  const { projects } = useProjects()
   const [form, setForm] = useState<ReportFormData>({
     todayWork: "",
     tomorrowPlan: "",
@@ -73,6 +78,14 @@ export default function ReportsPage() {
   const reportContent = generateReportContent(form)
   const quality = checkReportQuality(reportContent)
   const hasContent = form.todayWork.trim() || form.tomorrowPlan.trim()
+  const summarizeWorkspace = () => {
+    const completed = todos.filter((item) => item.completed).slice(0, 8).map((item) => item.title)
+    const active = projects.filter((item) => item.status === "active").slice(0, 5).map((item) => `${item.title}：${item.stage}${item.next_action ? `，下一步${item.next_action}` : ""}`)
+    const lines = [...completed, ...active]
+    if (!lines.length) { setSaveMessage("今天还没有可汇总的任务或项目记录"); return }
+    setForm((current) => ({ ...current, todayWork: lines.join("\n") }))
+    setSaveMessage(`已汇总 ${lines.length} 条工作记录，可继续编辑后生成日报`)
+  }
 
   const handleSaveDraft = async () => {
     if (!hasContent) return
@@ -210,45 +223,24 @@ export default function ReportsPage() {
   return (
     <AppLayout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <button
-                onClick={() => setTab("daily")}
-                className={`text-lg font-semibold pb-1 border-b-2 transition-colors ${
-                  tab === "daily" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                日报
-              </button>
-              <button
-                onClick={() => setTab("weekly")}
-                className={`text-lg font-semibold pb-1 border-b-2 transition-colors ${
-                  tab === "weekly" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                周报
-              </button>
-            </div>
-            <p className="text-sm text-muted-foreground mt-1">
+        <PageHero eyebrow="Reflect, refine, repeat." title="Reports 工作复盘" description={<>
               {formatDate(today)} ·{" "}
               {workday ? (
                 <Badge variant="success" className="text-[10px]">工作日</Badge>
               ) : (
                 <Badge variant="secondary" className="text-[10px]">休息日</Badge>
               )}
-            </p>
-          </div>
-          {tab === "daily" && (
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowHistory(!showHistory)}>
+            </>} action={
+          tab === "daily" ? (
+              <Button variant="outline" size="sm" onClick={() => setShowHistory(!showHistory)} className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white">
                 <History className="mr-1 h-4 w-4" />
                 历史
                 {showHistory ? <ChevronUp className="ml-1 h-3 w-3" /> : <ChevronDown className="ml-1 h-3 w-3" />}
               </Button>
-            </div>
-          )}
+          ) : null
+        } />
+        <div className="inline-flex rounded-full border bg-card p-1 shadow-sm">
+          {(["daily", "weekly"] as const).map((item) => <button key={item} onClick={() => setTab(item)} className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${tab === item ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>{item === "daily" ? "日报" : "周报"}</button>)}
         </div>
 
         {/* Daily Report Tab */}
@@ -287,10 +279,11 @@ export default function ReportsPage() {
               <CardTitle className="text-base flex items-center gap-2">
                 <Edit3 className="h-4 w-4" />
                 填写日报
+                <Button variant="outline" size="sm" className="ml-auto h-7 gap-1 text-xs" onClick={summarizeWorkspace}><Sparkles className="h-3 w-3" />从工作台汇总</Button>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 text-xs gap-1 ml-auto"
+                  className="h-7 text-xs gap-1"
                   onClick={() => setShowPastePanel(!showPastePanel)}
                 >
                   <ClipboardPaste className="h-3 w-3" />

@@ -14,11 +14,11 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { getGreeting, isWorkday } from "@/lib/utils"
-import { Sun, Moon, LogOut, User, Bell } from "lucide-react"
+import { Sun, Moon, LogOut, User, Bell, Menu } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
 
-export function Header() {
+export function Header({ onMenuClick }: { onMenuClick: () => void }) {
   const router = useRouter()
   const supabase = createClient()
   const { theme, setTheme } = useTheme()
@@ -26,10 +26,14 @@ export function Header() {
   const [userEmail, setUserEmail] = useState<string | null>(null)
 
   useEffect(() => {
+    // Client-only theme controls render after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true)
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) setUserEmail(data.user.email ?? null)
     })
+    // Supabase browser client is intentionally initialized once for this header.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleSignOut = async () => {
@@ -43,10 +47,19 @@ export function Header() {
   const isTodayWorkday = isWorkday(today)
 
   return (
-    <header className="h-16 border-b bg-card/50 backdrop-blur-sm flex items-center justify-between px-6 sticky top-0 z-30">
+    <header className="sticky top-0 z-20 flex h-20 items-center justify-between border-b border-border/60 bg-card/80 px-4 backdrop-blur-xl sm:px-8">
       {/* Left: Greeting */}
       <div className="flex items-center gap-3">
-        <h2 className="text-lg font-semibold">{greeting}</h2>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 md:hidden"
+          onClick={onMenuClick}
+          aria-label="打开导航菜单"
+        >
+          <Menu className="h-5 w-5" />
+        </Button>
+        <div className="hidden sm:block"><p className="text-[10px] font-semibold tracking-[.2em] text-primary/65">AI 内容工作台</p><h2 className="text-[17px] font-semibold">{greeting}</h2></div>
         {isTodayWorkday ? (
           <Badge variant="success" className="text-[10px]">工作日</Badge>
         ) : (

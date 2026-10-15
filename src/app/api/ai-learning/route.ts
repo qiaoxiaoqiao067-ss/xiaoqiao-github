@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { execSync } from "child_process"
-import { writeFileSync, unlinkSync } from "fs"
-import { tmpdir } from "os"
-import { join } from "path"
-import { randomUUID } from "crypto"
+import { requireUser } from "@/lib/supabase/require-user"
+import { runCodex } from "@/lib/ai/codex"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -70,12 +67,15 @@ EMOJI 标题
 
 export async function GET(request: NextRequest) {
   try {
+    const { user, response } = await requireUser()
+    if (response) return response
+
     const client = getClient()
     const { searchParams } = new URL(request.url)
     const category = searchParams.get("category")
     const difficulty = searchParams.get("difficulty")
 
-    let query = client.from("ai_learnings").select("*").order("date", { ascending: false }).limit(30)
+    let query = client.from("ai_learnings").select("*").eq("user_id", user.id).order("date", { ascending: false }).limit(30)
     if (category) query = query.eq("category", category)
     if (difficulty) query = query.eq("difficulty", parseInt(difficulty))
 
@@ -89,12 +89,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { userId } = body
+    const { user, response } = await requireUser()
+    if (response) return response
 
-    if (!userId) {
-      return NextResponse.json({ error: "Missing userId" }, { status: 400 })
-    }
+    await request.json()
 
     const todayStr = today.toISOString().slice(0, 10)
     const client = getClient()
@@ -104,7 +102,7 @@ export async function POST(request: NextRequest) {
       .from("ai_learnings")
       .select("id")
       .eq("date", todayStr)
-      .eq("user_id", userId)
+      .eq("user_id", user.id)
       .maybeSingle()
 
     if (existing) {
@@ -116,20 +114,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ learning: data })
     }
 
-    // Generate with Claude
-    const tmpFile = join(tmpdir(), `ai-learning-${randomUUID()}.txt`)
-    writeFileSync(tmpFile, SEARCH_PROMPT, "utf-8")
-
-    let generated
-    try {
-      const result = execSync(
-        `cat ${tmpFile} | claude -p --model sonnet --output-format text 2>/dev/null`,
-        { encoding: "utf-8", timeout: 90000, maxBuffer: 1024 * 1024 }
-      )
-      generated = result.trim()
-    } finally {
-      try { unlinkSync(tmpFile) } catch {}
-    }
+    const generated = await runCodex(SEARCH_PROMPT, 90000)
 
     // Parse sections
     const getSection = (label: string, fallback = "") => {
@@ -176,10 +161,10 @@ export async function POST(request: NextRequest) {
     const { data, error } = await client
       .from("ai_learnings")
       .insert({
-        user_id: userId,
+        user_id: user.id,
         title,
         content: cleanContent,
-        source: "Claude 知识库 (基于训练数据)",
+        source: "Codex AI 知识库 (基于训练数据)",
         source_url: "",
         category: safeCategory,
         difficulty,
@@ -197,6 +182,9 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const { user, response } = await requireUser()
+    if (response) return response
+
     const body = await request.json()
     const { id, notes, learned } = body
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 })
@@ -210,6 +198,7 @@ export async function PATCH(request: NextRequest) {
       .from("ai_learnings")
       .update(updates)
       .eq("id", id)
+      .eq("user_id", user.id)
       .select()
       .single()
 

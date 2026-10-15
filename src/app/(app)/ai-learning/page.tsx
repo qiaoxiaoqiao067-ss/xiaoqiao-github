@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { AppLayout } from "@/components/layout/app-layout"
+import { PageHero } from "@/components/layout/page-hero"
 import { useAILearning, type AILearning } from "@/hooks/use-ai-learning"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -83,29 +84,20 @@ export default function AILearningPage() {
   return (
     <AppLayout>
       <div className="space-y-6 max-w-4xl">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <span className="text-2xl">🧠</span> AI 学习
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              每天一个知识点，持续积累 AI 认知
-            </p>
-          </div>
+        <PageHero eyebrow="AI短剧 · 每日学习" title="爆款与方法学习" description="每天拆解一个案例，持续积累责编、编剧与AI制作判断" action={
           <div className="flex items-center gap-3">
             {todayLearning ? (
               <Badge variant="success" className="gap-1">
                 <CheckCircle className="h-3 w-3" /> 今日已学习
               </Badge>
             ) : (
-              <Button onClick={generateToday} disabled={generating} size="sm" className="gap-1.5">
+              <Button onClick={generateToday} disabled={generating} size="sm" className="gap-1.5 bg-[#c9f45a] text-[#102a21] hover:bg-[#d8ff76]">
                 {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 生成今日要点
               </Button>
             )}
           </div>
-        </div>
+        } />
 
         {/* Stats bar */}
         <div className="grid grid-cols-3 gap-3">

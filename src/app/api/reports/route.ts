@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { requireUser } from "@/lib/supabase/require-user"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -10,10 +11,14 @@ function getClient() {
 
 export async function GET() {
   try {
+    const { user, response } = await requireUser()
+    if (response) return response
+
     const client = getClient()
     const { data, error } = await client
       .from("daily_reports")
       .select("*")
+      .eq("user_id", user.id)
       .eq("status", "final")
       .order("date", { ascending: false })
       .limit(30)
@@ -27,10 +32,13 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { userId, date, content, status, summary } = body
+    const { user, response } = await requireUser()
+    if (response) return response
 
-    if (!userId || !date || !content) {
+    const body = await request.json()
+    const { date, content, status, summary } = body
+
+    if (!date || !content) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
@@ -41,7 +49,7 @@ export async function POST(request: NextRequest) {
       .from("daily_reports")
       .select("id, status")
       .eq("date", date)
-      .eq("user_id", userId)
+      .eq("user_id", user.id)
       .eq("status", status || "draft")
       .maybeSingle()
 
@@ -59,7 +67,7 @@ export async function POST(request: NextRequest) {
     } else {
       const { data, error } = await client
         .from("daily_reports")
-        .insert({ user_id: userId, date, content, summary, status: status || "draft" })
+        .insert({ user_id: user.id, date, content, summary, status: status || "draft" })
         .select()
         .single()
 
@@ -75,6 +83,9 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const { user, response } = await requireUser()
+    if (response) return response
+
     const { searchParams } = new URL(request.url)
     const id = searchParams.get("id")
 
@@ -83,7 +94,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const client = getClient()
-    const { error } = await client.from("daily_reports").delete().eq("id", id)
+    const { error } = await client.from("daily_reports").delete().eq("id", id).eq("user_id", user.id)
 
     if (error) throw error
     return NextResponse.json({ success: true })

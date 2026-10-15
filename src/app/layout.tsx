@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Personal Workbench — 个人工作台",
-  description: "AI-powered personal workbench with task management, daily reports, document hub, and AI learning",
+  title: "云霞内容台 — AI短剧内容工作台",
+  description: "面向责编、编剧与内容策划的 AI 短剧个人工作台",
 }
 
 export default function RootLayout({

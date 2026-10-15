@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from "react"
 import { AppLayout } from "@/components/layout/app-layout"
+import { PageHero } from "@/components/layout/page-hero"
 import { useDocuments, DOC_CATEGORIES, CAT_EMOJI, type Document } from "@/hooks/use-documents"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,6 +14,14 @@ import {
   BookOpen, Plus, Search, Trash2, Edit3, Save, X, Upload, Copy,
   FileText, Tag, FolderOpen, Eye, ChevronRight, Loader2, CheckCircle, FileUp
 } from "lucide-react"
+
+type ProcessedFile = {
+  title: string
+  content: string
+  category: string
+  size: number
+  _htmlUri?: string
+}
 
 export default function DocsPage() {
   const { documents, loading, error, addDocument, updateDocument, deleteDocument, fetchDocuments } = useDocuments()
@@ -58,7 +67,7 @@ export default function DocsPage() {
     return "其他"
   }
 
-  const processFile = async (file: File): Promise<{title: string; content: string; category: string; size: number}> => {
+  const processFile = async (file: File): Promise<ProcessedFile> => {
     const name = file.name.replace(/\.[^.]+$/, "")
     const ext = file.name.split(".").pop()?.toLowerCase() || ""
     const category = autoCategorize(name)
@@ -263,22 +272,12 @@ export default function DocsPage() {
   return (
     <AppLayout>
       <div className="space-y-6 max-w-5xl">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <BookOpen className="h-6 w-6 text-violet-500" />
-              文档中心
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {documents.length} 篇文档 · 知识库检索
-            </p>
-          </div>
-          <Button onClick={() => setShowAdd(!showAdd)} size="sm" className="gap-1.5">
+        <PageHero eyebrow="Your editorial archive." title="Docs 文档知识库" description={`${documents.length} 项内容 · 当前复用文档知识库`} action={
+          <Button onClick={() => setShowAdd(!showAdd)} size="sm" className="gap-1.5 bg-[#c9f45a] text-[#102a21] hover:bg-[#d8ff76]">
             {showAdd ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
             {showAdd ? "取消" : "新建文档"}
           </Button>
-        </div>
+        } />
 
         {/* Message */}
         {msg && (

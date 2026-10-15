@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server"
-import { execSync } from "child_process"
 import { writeFileSync, unlinkSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { randomUUID } from "crypto"
+import { requireUser } from "@/lib/supabase/require-user"
+import { runCodex } from "@/lib/ai/codex"
 
 const SKILL_PROMPT = `你是一个日报生成助手。根据用户提供的简短工作内容，生成一份自然、专业的工作日报。
 
@@ -69,6 +70,9 @@ export async function POST(request: Request) {
   const tmpFile = join(tmpdir(), `report-prompt-${randomUUID()}.txt`)
 
   try {
+    const { response } = await requireUser()
+    if (response) return response
+
     const { briefInput } = await request.json()
 
     if (!briefInput || !briefInput.trim()) {
@@ -94,17 +98,7 @@ ${briefInput}
     // Write prompt to temp file to avoid shell escaping issues
     writeFileSync(tmpFile, fullPrompt, "utf-8")
 
-    // Call Claude CLI
-    const result = execSync(
-      `cat ${tmpFile} | claude -p --model haiku --output-format text 2>/dev/null`,
-      {
-        encoding: "utf-8",
-        timeout: 60000,
-        maxBuffer: 1024 * 1024,
-      }
-    )
-
-    const reportText = result.trim()
+    const reportText = await runCodex(fullPrompt, 60000)
 
     if (!reportText) {
       return NextResponse.json(

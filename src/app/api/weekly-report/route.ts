@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
-import { execSync } from "child_process"
-import { writeFileSync, unlinkSync } from "fs"
-import { tmpdir } from "os"
-import { join } from "path"
-import { randomUUID } from "crypto"
+import { requireUser } from "@/lib/supabase/require-user"
+import { runCodex } from "@/lib/ai/codex"
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -20,6 +17,9 @@ export async function GET(request: NextRequest) {
   const endDate = searchParams.get("end")
 
   try {
+    const { user, response } = await requireUser()
+    if (response) return response
+
     const client = getClient()
 
     if (startDate && endDate) {
@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
       const { data, error } = await client
         .from("daily_reports")
         .select("*")
+        .eq("user_id", user.id)
         .eq("status", "final")
         .gte("date", startDate)
         .lte("date", endDate)
@@ -39,6 +40,7 @@ export async function GET(request: NextRequest) {
       const { data, error } = await client
         .from("weekly_reports")
         .select("*")
+        .eq("user_id", user.id)
         .order("week_start", { ascending: false })
         .limit(10)
 
@@ -53,10 +55,13 @@ export async function GET(request: NextRequest) {
 // POST: save weekly report
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { userId, weekStart, weekEnd, content, summary } = body
+    const { user, response } = await requireUser()
+    if (response) return response
 
-    if (!userId || !weekStart || !weekEnd || !content) {
+    const body = await request.json()
+    const { weekStart, weekEnd, content, summary } = body
+
+    if (!weekStart || !weekEnd || !content) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
@@ -67,7 +72,7 @@ export async function POST(request: NextRequest) {
       .from("weekly_reports")
       .select("id")
       .eq("week_start", weekStart)
-      .eq("user_id", userId)
+      .eq("user_id", user.id)
       .maybeSingle()
 
     let result
@@ -83,7 +88,7 @@ export async function POST(request: NextRequest) {
     } else {
       const { data, error } = await client
         .from("weekly_reports")
-        .insert({ user_id: userId, week_start: weekStart, week_end: weekEnd, content, summary })
+        .insert({ user_id: user.id, week_start: weekStart, week_end: weekEnd, content, summary })
         .select()
         .single()
       if (error) throw error
@@ -99,6 +104,9 @@ export async function POST(request: NextRequest) {
 // PUT: AI-generate weekly report from daily reports
 export async function PUT(request: NextRequest) {
   try {
+    const { response } = await requireUser()
+    if (response) return response
+
     const { dailyContents, weekStart, weekEnd } = await request.json()
 
     if (!dailyContents || !dailyContents.length) {
@@ -152,19 +160,8 @@ ${startLabel} - ${endLabel} 周报
 
 请只输出周报内容。`
 
-    // Write prompt to temp file
-    const tmpFile = join(tmpdir(), `weekly-prompt-${randomUUID()}.txt`)
-    writeFileSync(tmpFile, prompt, "utf-8")
-
-    try {
-      const result = execSync(
-        `cat ${tmpFile} | claude -p --model haiku --output-format text 2>/dev/null`,
-        { encoding: "utf-8", timeout: 60000, maxBuffer: 1024 * 1024 }
-      )
-      return NextResponse.json({ report: result.trim() })
-    } finally {
-      try { unlinkSync(tmpFile) } catch {}
-    }
+    const result = await runCodex(prompt, 60000)
+    return NextResponse.json({ report: result })
   } catch (e: any) {
     return NextResponse.json({ error: e.message || "生成失败" }, { status: 500 })
   }
