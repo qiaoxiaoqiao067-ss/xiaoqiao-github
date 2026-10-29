@@ -65,10 +65,12 @@ function tagValue(tags: string[] | null | undefined, key: string) {
 
 function normalizeTodo(row: Record<string, unknown>): Todo {
   const tags = Array.isArray(row.tags) ? row.tags.filter((item): item is string => typeof item === "string") : []
+  const status = (row.status || tagValue(tags, "status") || (row.completed ? "completed" : "todo")) as Todo["status"]
   return {
     ...row,
     tags,
-    status: (row.status || tagValue(tags, "status") || (row.completed ? "completed" : "todo")) as Todo["status"],
+    status,
+    completed: Boolean(row.completed || status === "completed"),
     category: String(row.category || tagValue(tags, "category") || "") || null,
     next_action: String(row.next_action || tagValue(tags, "next_action") || "") || null,
     waiting_for: String(row.waiting_for || tagValue(tags, "waiting_for") || "") || null,
@@ -186,20 +188,27 @@ export function useTodos() {
 
   const updateTodo = useCallback(
     async (id: string, updates: Partial<NewTodo>) => {
+      const current = todos.find((todo) => todo.id === id)
+      const completionUpdates = updates.status !== undefined
+        ? {
+            completed: updates.status === "completed",
+            completed_at: updates.status === "completed" ? (current?.completed_at || new Date().toISOString()) : null,
+          }
+        : {}
       const { data, error } = await supabase
         .from("todos")
-      .update({ ...updates, manual_override: true, updated_at: new Date().toISOString() })
+      .update({ ...updates, ...completionUpdates, manual_override: true, updated_at: new Date().toISOString() })
         .eq("id", id)
         .select()
         .single()
 
       if (error && isLegacySchemaError(error)) {
-        const current = todos.find((todo) => todo.id === id)
         const fallback = await supabase.from("todos").update({
           ...(updates.title !== undefined ? { title: updates.title } : {}),
           ...(updates.description !== undefined ? { description: updates.description } : {}),
           ...(updates.priority !== undefined ? { priority: updates.priority } : {}),
           ...(updates.due_date !== undefined ? { due_date: updates.due_date } : {}),
+          ...completionUpdates,
           tags: legacyTags({ ...current, ...updates } as NewTodo, current?.tags || []),
           updated_at: new Date().toISOString(),
         }).eq("id", id).select().single()

@@ -10,15 +10,14 @@ import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Progress } from "@/components/ui/progress"
 import {
-  Brain, Sparkles, Loader2, BookOpen, CheckCircle, Lightbulb,
-  ChevronRight, Zap, Filter, Calendar, Target, PenLine, Notebook, ExternalLink
+  Sparkles, Loader2, BookOpen, CheckCircle,
+  Zap, Calendar, Target, PenLine, Notebook
 } from "lucide-react"
 
-const CATEGORIES = ["全部", "市场动态", "提示词工程", "Skill开发", "Agent设计", "AI工具", "模型原理"]
+const CATEGORIES = ["全部", "平台趋势", "题材洞察", "剧本方法", "本地化", "AI制作", "责编方法"]
 const CATEGORY_EMOJI: Record<string, string> = {
-  "全部": "📚", "市场动态": "📰", "提示词工程": "💬", "Skill开发": "🛠️", "Agent设计": "🤖", "AI工具": "🔧", "模型原理": "🧠",
+  "全部": "📚", "平台趋势": "📈", "题材洞察": "🎯", "剧本方法": "✍️", "本地化": "🌎", "AI制作": "🎬", "责编方法": "📋",
 }
 const DIFFICULTY_CONFIG: Record<number, { label: string; emoji: string; className: string }> = {
   1: { label: "入门", emoji: "🌱", className: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400" },
@@ -41,7 +40,7 @@ function SectionBlock({ emoji, title, children }: { emoji: string; title: string
 }
 
 export default function AILearningPage() {
-  const { learnings, todayLearning, loading, generating, error, generateToday, updateLearning, fetchLearnings } = useAILearning()
+  const { learnings, todayLearning, loading, generating, error, generateToday, updateLearning } = useAILearning()
   const [filterCategory, setFilterCategory] = useState("全部")
   const [selectedLearning, setSelectedLearning] = useState<AILearning | null>(null)
   const [noteText, setNoteText] = useState("")

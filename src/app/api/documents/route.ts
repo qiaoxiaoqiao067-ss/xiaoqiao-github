@@ -9,11 +9,12 @@ function getClient() {
   return createClient(supabaseUrl, supabaseServiceKey)
 }
 
-const CATEGORIES = ["技术文档", "会议纪要", "日报", "周报", "制度文件", "模板", "其他"]
+const CATEGORIES = ["项目资料", "剧本与选题", "会议纪要", "市场与调研", "日报周报", "合同制度", "模板工具", "行业资料", "其他"]
 const TITLE_PATTERNS = [
   { pattern: /^([^-]+)-(.+)$/, format: (m: RegExpMatchArray) => `${m[1].trim()} - ${m[2].trim()}` },
   { pattern: /^(.+)_(.+)$/, format: (m: RegExpMatchArray) => `${m[1].trim()} - ${m[2].trim()}` },
 ]
+const errorMessage=(error:unknown)=>error instanceof Error?error.message:"文档操作失败"
 
 function standardizeTitle(title: string): string {
   // Remove file extension
@@ -58,8 +59,8 @@ export async function GET(request: NextRequest) {
     const { data, error } = await query
     if (error) throw error
     return NextResponse.json({ documents: data || [] })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e: unknown) {
+    return NextResponse.json({ error: errorMessage(e) }, { status: 500 })
   }
 }
 
@@ -97,8 +98,8 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error
     return NextResponse.json({ document: data })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e: unknown) {
+    return NextResponse.json({ error: errorMessage(e) }, { status: 500 })
   }
 }
 
@@ -112,7 +113,7 @@ export async function PATCH(request: NextRequest) {
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 })
 
     const client = getClient()
-    const updates: any = { updated_at: new Date().toISOString() }
+    const updates:Record<string,unknown> = { updated_at: new Date().toISOString() }
     if (title !== undefined) { updates.title = title; updates.standardized_title = standardizeTitle(title) }
     if (content !== undefined) updates.content = content
     if (category !== undefined) updates.category = category
@@ -128,8 +129,8 @@ export async function PATCH(request: NextRequest) {
 
     if (error) throw error
     return NextResponse.json({ document: data })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e: unknown) {
+    return NextResponse.json({ error: errorMessage(e) }, { status: 500 })
   }
 }
 
@@ -146,7 +147,7 @@ export async function DELETE(request: NextRequest) {
     const { error } = await client.from("documents").delete().eq("id", id).eq("user_id", user.id)
     if (error) throw error
     return NextResponse.json({ success: true })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e: unknown) {
+    return NextResponse.json({ error: errorMessage(e) }, { status: 500 })
   }
 }

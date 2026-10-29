@@ -28,6 +28,7 @@ export function useAILearning() {
 
   const fetchLearnings = useCallback(async (category?: string, difficulty?: string) => {
     setLoading(true)
+    setError(null)
     try {
       const params = new URLSearchParams()
       if (category) params.set("category", category)
@@ -36,8 +37,8 @@ export function useAILearning() {
       const data = await resp.json()
       if (!resp.ok) throw new Error(data.error)
       setLearnings(data.learnings || [])
-    } catch (e: any) {
-      setError(e.message)
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : "学习内容加载失败")
     } finally {
       setLoading(false)
     }
@@ -62,8 +63,8 @@ export function useAILearning() {
       // Refresh list
       await fetchLearnings()
       return data.learning
-    } catch (e: any) {
-      setError(e.message)
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : "学习内容生成失败")
     } finally {
       setGenerating(false)
     }
@@ -87,6 +88,8 @@ export function useAILearning() {
   // Load today's learning on mount
   useEffect(() => {
     const today = new Date().toISOString().slice(0, 10)
+    // Initial remote learning synchronization.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchLearnings().then(() => {
       setLearnings(prev => {
         const todayItem = prev.find(l => l.date === today)

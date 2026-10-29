@@ -10,5 +10,32 @@ export function createClient() {
     )
   }
 
-  return createBrowserClient(supabaseUrl, supabaseAnonKey)
+  const configuredOrigin = new URL(supabaseUrl).origin
+  const browserFetch: typeof fetch = (input, init) => {
+    if (typeof window === "undefined") return fetch(input, init)
+
+    const sourceUrl =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
+    const target = new URL(sourceUrl)
+    if (target.origin !== configuredOrigin) return fetch(input, init)
+
+    const proxyUrl = new URL(
+      `/api/supabase${target.pathname}${target.search}`,
+      window.location.origin,
+    )
+    const proxiedInput =
+      typeof input === "string" || input instanceof URL
+        ? proxyUrl
+        : new Request(proxyUrl, input)
+
+    return fetch(proxiedInput, init)
+  }
+
+  return createBrowserClient(supabaseUrl, supabaseAnonKey, {
+    global: { fetch: browserFetch },
+  })
 }

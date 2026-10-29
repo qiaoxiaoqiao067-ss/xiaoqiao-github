@@ -33,7 +33,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         )}
       >
         <Header onMenuClick={() => setMobileSidebarOpen(true)} />
-        <main className="paper-grid flex-1 overflow-y-auto p-4 sm:p-7 lg:p-9">
+        <main className="paper-grid flex-1 overflow-y-auto p-4 sm:p-5 lg:p-6">
           <div className="max-w-7xl mx-auto">
             {children}
           </div>

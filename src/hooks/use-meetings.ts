@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 
-export type Meeting = { id:string; user_id:string; project_id:string|null; linked_idea_id:string|null; title:string; meeting_type:string; meeting_date:string|null; source_url:string|null; transcript:string|null; summary:string|null; decisions:string|null; next_actions:string|null; created_at:string; updated_at:string }
+export type Meeting = { id:string; user_id:string; project_id:string|null; linked_idea_id:string|null; title:string; meeting_type:string; meeting_date:string|null; source_url:string|null; transcript:string|null; summary:string|null; decisions:string|null; next_actions:string|null; meeting_file_name?:string|null; meeting_storage_path?:string|null; meeting_parse_status?:string|null; meeting_uploaded_at?:string|null; created_at:string; updated_at:string }
 export type MeetingInput = Partial<Omit<Meeting, "id"|"user_id"|"created_at"|"updated_at">> & { title:string; meeting_type:string }
 
 export function useMeetings() {
@@ -19,14 +19,20 @@ export function useMeetings() {
     const { data: auth } = await supabase.auth.getUser(); if (!auth.user) throw new Error("请先登录")
     const { data, error: insertError } = await supabase.from("meetings").insert({ ...input, user_id:auth.user.id }).select().single(); if (insertError) throw insertError
     setMeetings((current) => [data as Meeting, ...current])
+    return data as Meeting
   }, [supabase])
   const updateMeeting = useCallback(async (id:string, updates:Partial<MeetingInput>) => {
     const { data, error:updateError } = await supabase.from("meetings").update({...updates, updated_at:new Date().toISOString()}).eq("id",id).select().single(); if (updateError) throw updateError
     setMeetings((current) => current.map((item) => item.id === id ? data as Meeting : item))
   }, [supabase])
+  const deleteMeeting = useCallback(async (id:string) => {
+    const { error:deleteError } = await supabase.from("meetings").delete().eq("id",id)
+    if (deleteError) throw deleteError
+    setMeetings((current) => current.filter((item) => item.id !== id))
+  }, [supabase])
   useEffect(() => { // Initial remote data synchronization.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchMeetings()
   }, [fetchMeetings])
-  return { meetings, loading, error, addMeeting, updateMeeting, refetch:fetchMeetings }
+  return { meetings, loading, error, addMeeting, updateMeeting, deleteMeeting, refetch:fetchMeetings }
 }

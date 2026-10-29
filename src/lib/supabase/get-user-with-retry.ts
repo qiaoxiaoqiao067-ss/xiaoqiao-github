@@ -11,6 +11,11 @@ export async function getUserWithNetworkRetry(supabase: SupabaseClient, attempts
       // immediately, making a transient connection look like a signed-out
       // user and leaving the dashboard empty after refresh.
       if (!result.error) return result
+      // A missing session is a normal signed-out state, not a network
+      // failure. Return it immediately so middleware can redirect to login.
+      if (result.error.name === "AuthSessionMissingError" || /auth session missing/i.test(result.error.message)) {
+        return result
+      }
       lastError = result.error
     } catch (error) {
       lastError = error

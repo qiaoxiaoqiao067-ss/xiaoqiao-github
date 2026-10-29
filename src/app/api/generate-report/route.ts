@@ -24,7 +24,7 @@ const SKILL_PROMPT = `你是一个日报生成助手。根据用户提供的简�
 （禁止添加任何子标题）
 
 三、今日心得
-[一个自然段落，2-4句话。用真实的口吻写工作感悟，不要套话。如果用户没提供，根据工作内容合理推断。]
+[一个自然段落，2-4句话。只整理用户提供的心得，不得推断或补写。未提供时保留（待填写）。]
 
 四、复盘反思
 问题：
@@ -61,7 +61,7 @@ const SKILL_PROMPT = `你是一个日报生成助手。根据用户提供的简�
 - 禁止使用感叹号
 - 禁止使用 Markdown 标记
 - 禁止虚构任何用户未提及的工作内容
-- 禁止心得写"无"或"暂无"——必须基于工作内容合理推断
+- 禁止推断、补写用户未提供的心得、反思、结果或事实；缺失内容保留（待填写）
 - 心得不要写成"今天我学到了..."的小学生日记风格，要自然、成熟
 
 请严格按照格式输出，只输出日报内容，不要输出任何其他文字。`
@@ -88,9 +88,9 @@ export async function POST(request: Request) {
 ${briefInput}
 
 要求：
-1. 合理扩写每个事项，补充完成说明
+1. 只整理和润色用户提供的信息，不补充未明确提供的完成结果
 2. 如果用户提到了明天计划，放入"二、明日工作"
-3. 如果用户没提心得或反思，根据工作内容合理推断并生成
+3. 如果用户没提心得或反思，对应部分输出（待填写），不得推断
 4. 严格遵守格式要求，纯文本输出`
 
     const fullPrompt = `${SKILL_PROMPT}\n\n---\n\n${userPrompt}`
@@ -108,8 +108,9 @@ ${briefInput}
     }
 
     return NextResponse.json({ report: reportText })
-  } catch (e: any) {
-    const message = e.stderr || e.stdout || e.message || "未知错误"
+  } catch (error: unknown) {
+    const details = error && typeof error === "object" ? error as Record<string, unknown> : {}
+    const message = String(details.stderr || details.stdout || details.message || "未知错误")
     return NextResponse.json(
       { error: `Codex 调用失败: ${message.slice(0, 300)}` },
       { status: 500 }

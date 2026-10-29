@@ -17,6 +17,7 @@ export type Document = {
 }
 
 const BASE = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"
+const normalizeCategory=(value:string|null)=>({"日报":"日报周报","周报":"日报周报","制度文件":"合同制度","模板":"模板工具","技术文档":"其他"}[value||""]||value||"其他")
 
 export function useDocuments() {
   const [documents, setDocuments] = useState<Document[]>([])
@@ -25,6 +26,7 @@ export function useDocuments() {
 
   const fetchDocuments = useCallback(async (q?: string, category?: string) => {
     setLoading(true)
+    setError(null)
     try {
       const params = new URLSearchParams()
       if (q) params.set("q", q)
@@ -32,9 +34,9 @@ export function useDocuments() {
       const resp = await fetch(`${BASE}/api/documents?${params}`)
       const data = await resp.json()
       if (!resp.ok) throw new Error(data.error)
-      setDocuments(data.documents || [])
-    } catch (e: any) {
-      setError(e.message)
+      setDocuments((data.documents || []).map((item:Document)=>({...item,category:normalizeCategory(item.category)})))
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : "文件加载失败")
     } finally {
       setLoading(false)
     }
@@ -54,7 +56,7 @@ export function useDocuments() {
     return data.document
   }, [])
 
-  const updateDocument = useCallback(async (id: string, updates: any) => {
+  const updateDocument = useCallback(async (id: string, updates: Partial<Pick<Document, "title" | "content" | "category" | "tags" | "standardized_title">>) => {
     const resp = await fetch(`${BASE}/api/documents`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -73,12 +75,16 @@ export function useDocuments() {
     setDocuments(prev => prev.filter(d => d.id !== id))
   }, [])
 
-  useEffect(() => { fetchDocuments() }, [fetchDocuments])
+  useEffect(() => {
+    // Initial remote document synchronization.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchDocuments()
+  }, [fetchDocuments])
 
   return { documents, loading, error, addDocument, updateDocument, deleteDocument, fetchDocuments }
 }
 
-export const DOC_CATEGORIES = ["全部", "技术文档", "会议纪要", "日报", "周报", "制度文件", "模板", "其他"]
+export const DOC_CATEGORIES = ["全部", "项目资料", "剧本与选题", "会议纪要", "市场与调研", "日报周报", "合同制度", "模板工具", "行业资料", "其他"]
 export const CAT_EMOJI: Record<string, string> = {
-  "全部": "📚", "技术文档": "📄", "会议纪要": "📋", "日报": "📰", "周报": "📊", "制度文件": "⚖️", "模板": "📐", "其他": "📁",
+  "全部": "📚", "项目资料":"🎬", "剧本与选题":"✍️", "会议纪要": "📋", "市场与调研":"📈", "日报周报": "📊", "合同制度": "⚖️", "模板工具": "📐", "行业资料":"🌍", "其他": "📁",
 }

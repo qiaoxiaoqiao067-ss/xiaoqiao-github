@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { createServerSupabase } from "@/lib/supabase/server"
+import { serviceClient } from "@/lib/supabase/service"
 
 const loginSchema = z.object({
   email: z.string().trim().email(),
@@ -34,7 +35,17 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: message }, { status: 401 })
       }
 
-      if (data.user) return NextResponse.json({ ok: true })
+      if (data.user) {
+        const { data: ownerWorkspace } = await serviceClient.from("workspaces").select("id").eq("owner_id", data.user.id).maybeSingle()
+        if (!ownerWorkspace) {
+          const { data: membership } = await serviceClient.from("workspace_members").select("status,role").eq("user_id", data.user.id).maybeSingle()
+          if (!membership || (membership.status !== "active" && membership.role !== "owner")) {
+            await supabase.auth.signOut()
+            return NextResponse.json({ error: "账号已注册，但还没有获得工作台权限。请等待管理员授权后再登录。" }, { status: 403 })
+          }
+        }
+        return NextResponse.json({ ok: true })
+      }
     } catch {
       if (attempt < 7) await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)))
     }

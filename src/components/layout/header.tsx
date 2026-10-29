@@ -24,6 +24,7 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [isOwner, setIsOwner] = useState(false)
 
   useEffect(() => {
     // Client-only theme controls render after hydration.
@@ -32,6 +33,9 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) setUserEmail(data.user.email ?? null)
     })
+    fetch("/api/team", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).then((data) => {
+      if (data?.role === "owner") setIsOwner(true)
+    }).catch(() => undefined)
     // Supabase browser client is intentionally initialized once for this header.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -47,35 +51,35 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
   const isTodayWorkday = isWorkday(today)
 
   return (
-    <header className="sticky top-0 z-20 flex h-20 items-center justify-between border-b border-border/60 bg-card/80 px-4 backdrop-blur-xl sm:px-8">
+    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-border/60 bg-card/85 px-4 backdrop-blur-xl sm:px-6">
       {/* Left: Greeting */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
         <Button
           variant="ghost"
           size="icon"
-          className="h-9 w-9 md:hidden"
+          className="h-8 w-8 md:hidden"
           onClick={onMenuClick}
           aria-label="打开导航菜单"
         >
           <Menu className="h-5 w-5" />
         </Button>
-        <div className="hidden sm:block"><p className="text-[10px] font-semibold tracking-[.2em] text-primary/65">AI 内容工作台</p><h2 className="text-[17px] font-semibold">{greeting}</h2></div>
+        <div className="hidden items-baseline gap-2 sm:flex"><p className="text-[9px] font-semibold tracking-[.17em] text-primary/60">AI 内容工作台</p><h2 className="text-sm font-semibold text-foreground/90">{greeting}</h2></div>
         {isTodayWorkday ? (
-          <Badge variant="success" className="text-[10px]">工作日</Badge>
+          <Badge variant="success" className="px-2 py-0.5 text-[9px]">工作日</Badge>
         ) : (
-          <Badge variant="secondary" className="text-[10px]">休息日</Badge>
+          <Badge variant="secondary" className="px-2 py-0.5 text-[9px]">休息日</Badge>
         )}
       </div>
 
       {/* Right: Actions */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
         {/* Theme Toggle */}
         {mounted && (
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            className="h-9 w-9"
+            className="h-8 w-8"
           >
             {theme === "dark" ? (
               <Sun className="h-4 w-4" />
@@ -86,15 +90,15 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
         )}
 
         {/* Notifications */}
-        <Button variant="ghost" size="icon" className="h-9 w-9">
+        <Button variant="ghost" size="icon" className="h-8 w-8">
           <Bell className="h-4 w-4" />
         </Button>
 
         {/* User Menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="h-9 w-9 rounded-full p-0">
-              <Avatar className="h-8 w-8">
+            <Button variant="ghost" className="h-8 w-8 rounded-full p-0">
+              <Avatar className="h-7 w-7">
                 <AvatarFallback className="text-xs bg-primary/10 text-primary">
                   {userEmail?.[0]?.toUpperCase() || <User className="h-4 w-4" />}
                 </AvatarFallback>
@@ -109,10 +113,10 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push("/settings")}>
+            {isOwner && <DropdownMenuItem onClick={() => router.push("/settings")}>
               <SettingsIcon className="mr-2 h-4 w-4" />
-              设置
-            </DropdownMenuItem>
+              团队设置
+            </DropdownMenuItem>}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleSignOut} className="text-destructive">
               <LogOut className="mr-2 h-4 w-4" />

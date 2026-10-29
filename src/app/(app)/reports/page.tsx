@@ -9,24 +9,22 @@ import {
   parseReportContent,
   checkReportQuality,
   isTodayWorkday,
+  type DailyReport,
   type ReportFormData,
 } from "@/hooks/use-reports"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
 import { formatDate } from "@/lib/utils"
-import { useTodos } from "@/hooks/use-todos"
-import { useProjects } from "@/hooks/use-projects"
+import { WeeklyReportTab } from "@/components/reports/weekly-report-tab"
 import { FileText, Send, Save, CheckCircle, XCircle, ChevronDown, ChevronUp, ChevronRight, History, Edit3, Trash2, Loader2, Sparkles, Calendar, AlertCircle, Copy, Eye, Wand2, ClipboardPaste } from "lucide-react"
+import { DataError } from "@/components/ui/data-error"
 
 export default function ReportsPage() {
-  const { reports, todayDraft, loading, error, saveDraft, finalizeReport, deleteReport } = useReports()
-  const { todos } = useTodos()
-  const { projects } = useProjects()
+  const { todayDraft, error, saveDraft, finalizeReport, deleteReport, markSentToLark, refetch } = useReports()
   const [form, setForm] = useState<ReportFormData>({
     todayWork: "",
     tomorrowPlan: "",
@@ -39,8 +37,10 @@ export default function ReportsPage() {
   const [sending, setSending] = useState(false)
   const [confirmSend, setConfirmSend] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
-  const [historyReports, setHistoryReports] = useState<any[]>([])
+  const [historyReports, setHistoryReports] = useState<DailyReport[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
+  const [finalizedContent, setFinalizedContent] = useState("")
+  const [finalizedReportId, setFinalizedReportId] = useState("")
 
   useEffect(() => {
     const baseUrl = window.location.origin
@@ -49,6 +49,12 @@ export default function ReportsPage() {
       .then(data => {
         console.log("[reports page] direct fetch got:", data.reports?.length, "items")
         setHistoryReports(data.reports || [])
+        const receivedReports = (data.reports || []) as DailyReport[]
+        const todayFinal = receivedReports.find((report) => report.date === new Date().toISOString().slice(0, 10) && report.status === "final")
+        if (todayFinal?.content) {
+          setFinalizedContent(todayFinal.content)
+          setFinalizedReportId(todayFinal.id)
+        }
         setHistoryLoading(false)
       })
       .catch(e => {
@@ -65,6 +71,8 @@ export default function ReportsPage() {
   useEffect(() => {
     if (todayDraft?.content) {
       const parsed = parseReportContent(todayDraft.content)
+      // Loading the persisted draft is the intended synchronization point.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm(parsed)
       setShowPreview(true)
     }
@@ -78,13 +86,26 @@ export default function ReportsPage() {
   const reportContent = generateReportContent(form)
   const quality = checkReportQuality(reportContent)
   const hasContent = form.todayWork.trim() || form.tomorrowPlan.trim()
-  const summarizeWorkspace = () => {
-    const completed = todos.filter((item) => item.completed).slice(0, 8).map((item) => item.title)
-    const active = projects.filter((item) => item.status === "active").slice(0, 5).map((item) => `${item.title}：${item.stage}${item.next_action ? `，下一步${item.next_action}` : ""}`)
-    const lines = [...completed, ...active]
-    if (!lines.length) { setSaveMessage("今天还没有可汇总的任务或项目记录"); return }
-    setForm((current) => ({ ...current, todayWork: lines.join("\n") }))
-    setSaveMessage(`已汇总 ${lines.length} 条工作记录，可继续编辑后生成日报`)
+  const missingDailyFields = [
+    !form.tomorrowPlan.trim() && "明日工作",
+    !form.insight.trim() && "今日心得",
+    !form.reflection.trim() && "复盘反思",
+  ].filter(Boolean) as string[]
+  const isCurrentVersionFinal = Boolean(finalizedContent && finalizedContent === reportContent)
+  const summarizeWorkspace = async () => {
+    setSaveMessage(null)
+    try {
+      const response = await fetch(`/api/reports/workspace-summary?date=${todayDateStr}`)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || "汇总失败")
+      const facts = (data.facts || []).map((item: { text: string }) => item.text)
+      const plans = (data.plans || []).map((item: { text: string }) => item.text)
+      if (!facts.length && !plans.length) { setSaveMessage("今天还没有可汇总的工作台记录"); return }
+      setForm((current) => ({ ...current, todayWork: facts.join("\n") || current.todayWork, tomorrowPlan: plans.join("\n") || current.tomorrowPlan }))
+      setSaveMessage(`已汇总 ${facts.length} 条事实和 ${plans.length} 条下一步，请补充心得与复盘`)
+    } catch (error) {
+      setSaveMessage(`汇总失败：${error instanceof Error ? error.message : "未知错误"}`)
+    }
   }
 
   const handleSaveDraft = async () => {
@@ -95,8 +116,8 @@ export default function ReportsPage() {
       await saveDraft(todayDateStr, reportContent)
       setSaveMessage("草稿已保存")
       setTimeout(() => setSaveMessage(null), 3000)
-    } catch (e: any) {
-      setSaveMessage(`保存失败: ${e.message}`)
+    } catch (error: unknown) {
+      setSaveMessage(`保存失败: ${error instanceof Error ? error.message : "未知错误"}`)
     } finally {
       setSaving(false)
     }
@@ -108,17 +129,23 @@ export default function ReportsPage() {
     setSaveMessage(null)
     setConfirmFinalize(false)
     try {
-      await finalizeReport(todayDateStr, reportContent)
+      const finalReport = await finalizeReport(todayDateStr, reportContent)
+      setFinalizedContent(reportContent)
+      setFinalizedReportId(finalReport.id)
       setSaveMessage(`${todayDateStr} 日报已定稿归档`)
       setTimeout(() => setSaveMessage(null), 3000)
-    } catch (e: any) {
-      setSaveMessage(`定稿失败: ${e.message}`)
+    } catch (error: unknown) {
+      setSaveMessage(`定稿失败: ${error instanceof Error ? error.message : "未知错误"}`)
     } finally {
       setFinalizing(false)
     }
   }
 
   const handleSendToLark = async () => {
+    if (!isCurrentVersionFinal) {
+      setSaveMessage("请先定稿当前版本，再同步飞书")
+      return
+    }
     setSending(true)
     setSaveMessage(null)
     try {
@@ -134,6 +161,8 @@ export default function ReportsPage() {
           }),
         })
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+        if (!finalizedReportId) throw new Error("未找到已定稿日报，请刷新后重试")
+        await markSentToLark(finalizedReportId)
         setSaveMessage("已发送到飞书")
         setConfirmSend(false)
       } else {
@@ -142,8 +171,8 @@ export default function ReportsPage() {
         setConfirmSend(false)
       }
       setTimeout(() => setSaveMessage(null), 3000)
-    } catch (e: any) {
-      setSaveMessage(`发送失败: ${e.message}`)
+    } catch (error: unknown) {
+      setSaveMessage(`发送失败: ${error instanceof Error ? error.message : "未知错误"}`)
     } finally {
       setSending(false)
     }
@@ -194,10 +223,11 @@ export default function ReportsPage() {
         reflection: reflectionMatch?.[1]?.trim() || form.reflection,
       })
       setShowPreview(true)
-      setSaveMessage("AI 已完善日报内容，请审核后保存")
+      setFinalizedContent("")
+      setSaveMessage(missingDailyFields.length ? `AI 已整理已有内容；${missingDailyFields.join("、")}仍需你补充` : "AI 已完善日报内容，请审核后保存")
       setTimeout(() => setSaveMessage(null), 4000)
-    } catch (e: any) {
-      setSaveMessage(`AI 生成失败: ${e.message}`)
+    } catch (error: unknown) {
+      setSaveMessage(`AI 生成失败: ${error instanceof Error ? error.message : "未知错误"}`)
       setTimeout(() => setSaveMessage(null), 5000)
     } finally {
       setAiGenerating(false)
@@ -256,12 +286,7 @@ export default function ReportsPage() {
         )}
 
         {/* Error */}
-        {error && (
-          <div className="flex items-center gap-2 p-4 rounded-lg bg-destructive/10 text-destructive text-sm">
-            <AlertCircle className="h-4 w-4" />
-            {error}
-          </div>
-        )}
+        {error && <DataError error={error} onRetry={refetch} />}
 
         {/* Save Message */}
         {saveMessage && (
@@ -385,6 +410,12 @@ export default function ReportsPage() {
                   className="resize-none"
                 />
               </div>
+              {missingDailyFields.length > 0 && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-700">
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>生成前信息检查：还缺少{missingDailyFields.join("、")}。AI只整理已有信息，不会代替你编写真实感受或判断。</span>
+                </div>
+              )}
               <div className="space-y-2">
                 <label className="text-sm font-medium">二、明日计划</label>
                 <Textarea
@@ -397,14 +428,16 @@ export default function ReportsPage() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">三、今日心得</label>
-                <Input
-                  placeholder="1-2句话总结今日收获"
+                <Textarea
+                  placeholder="用2-4句话总结今日真实收获"
                   value={form.insight}
                   onChange={(e) => setForm({ ...form, insight: e.target.value })}
-                  maxLength={100}
+                  maxLength={220}
+                  rows={3}
+                  className="resize-none"
                 />
                 <p className="text-[10px] text-muted-foreground text-right">
-                  {form.insight.length}/100
+                  {form.insight.length}/220
                 </p>
               </div>
               <div className="space-y-2">
@@ -497,13 +530,13 @@ export default function ReportsPage() {
               <Button variant="outline" size="sm" onClick={() => setConfirmFinalize(false)}>
                 取消
               </Button>
-              <Button variant="default" onClick={handleFinalize} disabled={finalizing}>
+              <Button variant="default" onClick={handleFinalize} disabled={finalizing || !quality.pass}>
                 {finalizing ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <CheckCircle className="mr-1 h-4 w-4" />}
                 确认定稿
               </Button>
             </>
           ) : (
-            <Button variant="default" onClick={() => setConfirmFinalize(true)} disabled={!hasContent}>
+            <Button variant="default" onClick={() => setConfirmFinalize(true)} disabled={!hasContent || !quality.pass}>
               <CheckCircle className="mr-1 h-4 w-4" />
               定稿归档
             </Button>
@@ -520,7 +553,7 @@ export default function ReportsPage() {
                 <Button
                   variant="default"
                   onClick={handleSendToLark}
-                  disabled={sending}
+                  disabled={sending || !isCurrentVersionFinal}
                   className="bg-blue-600 hover:bg-blue-700"
                 >
                   {sending ? (
@@ -535,7 +568,7 @@ export default function ReportsPage() {
               <Button
                 variant="default"
                 onClick={() => setConfirmSend(true)}
-                disabled={!hasContent}
+                disabled={!isCurrentVersionFinal}
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 <Send className="mr-1 h-4 w-4" />
@@ -568,7 +601,7 @@ export default function ReportsPage() {
                 </div>
               ) : (
                 <div className="space-y-2 max-h-[500px] overflow-y-auto">
-                  {historyReports.map((report: any) => (
+                  {historyReports.map((report) => (
                     <HistoryItem
                       key={report.id}
                       report={report}
@@ -584,13 +617,12 @@ export default function ReportsPage() {
         </> )}
 
         {/* Weekly Tab */}
-        {tab === "weekly" && <WeeklyTab />}
+        {tab === "weekly" && <WeeklyReportTab />}
       </div>
     </AppLayout>
   )
 }
-
-function HistoryItem({ report, onLoad, onDelete }: { report: any; onLoad: (content: string) => void; onDelete: (id: string) => void }) {
+function HistoryItem({ report, onLoad, onDelete }: { report: DailyReport; onLoad: (content: string) => void; onDelete: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false)
   return (
     <div className="rounded-lg border hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => setExpanded(!expanded)}>
@@ -616,252 +648,4 @@ function HistoryItem({ report, onLoad, onDelete }: { report: any; onLoad: (conte
       )}
     </div>
   )
-}
-
-function WeeklyTab() {
-  const [weekStart, setWeekStart] = useState(getMonday())
-  const weekEnd = getFriday(weekStart)
-  const [dailyReports, setDailyReports] = useState<any[]>([])
-  const [loadingAgg, setLoadingAgg] = useState(false)
-  const [generating, setGenerating] = useState(false)
-  const [weeklyContent, setWeeklyContent] = useState("")
-  const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState("")
-  const [weeklyHistory, setWeeklyHistory] = useState<any[]>([])
-  const [showWeeklyHistory, setShowWeeklyHistory] = useState(false)
-
-  // Load weekly history on mount
-  useEffect(() => {
-    const baseUrl = window.location.origin
-    fetch(`${baseUrl}/api/weekly-report`)
-      .then(r => r.json())
-      .then(data => setWeeklyHistory(data.reports || []))
-      .catch(() => {})
-  }, [])
-
-  const handleAggregate = async () => {
-    setLoadingAgg(true)
-    setMessage("")
-    try {
-      const baseUrl = window.location.origin
-      const resp = await fetch(`${baseUrl}/api/weekly-report?start=${weekStart}&end=${weekEnd}`)
-      const data = await resp.json()
-      if (!resp.ok) throw new Error(data.error)
-      setDailyReports(data.reports || [])
-      if (data.reports?.length === 0) setMessage("本周暂无日报记录")
-      else setMessage(`已加载 ${data.reports.length} 篇日报`)
-    } catch (e: any) {
-      setMessage(`加载失败: ${e.message}`)
-    } finally {
-      setLoadingAgg(false)
-    }
-  }
-
-  const handleGenerate = async () => {
-    if (dailyReports.length === 0) {
-      setMessage("请先加载日报")
-      return
-    }
-    setGenerating(true)
-    setMessage("")
-    try {
-      const baseUrl = window.location.origin
-      const resp = await fetch(`${baseUrl}/api/weekly-report`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dailyContents: dailyReports.map((r: any) => r.content),
-          weekStart,
-          weekEnd,
-        }),
-      })
-      const data = await resp.json()
-      if (!resp.ok) throw new Error(data.error)
-      setWeeklyContent(data.report)
-      setMessage("周报已生成，请审核修改后保存")
-    } catch (e: any) {
-      setMessage(`生成失败: ${e.message}`)
-    } finally {
-      setGenerating(false)
-    }
-  }
-
-  const handleSave = async () => {
-    if (!weeklyContent.trim()) return
-    setSaving(true)
-    setMessage("")
-    try {
-      const { createClient } = await import("@/lib/supabase/client")
-      const supabase = createClient()
-      const { data: user } = await supabase.auth.getUser()
-      if (!user.user) throw new Error("未登录")
-
-      const baseUrl = window.location.origin
-      const summary = `${weekStart} - ${weekEnd} 周报`
-      const resp = await fetch(`${baseUrl}/api/weekly-report`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: user.user.id,
-          weekStart,
-          weekEnd,
-          content: weeklyContent,
-          summary,
-        }),
-      })
-      const data = await resp.json()
-      if (!resp.ok) throw new Error(data.error)
-      setMessage("周报已保存")
-    } catch (e: any) {
-      setMessage(`保存失败: ${e.message}`)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const weekLabel = `${weekStart} 至 ${weekEnd}`
-
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">生成本周周报</CardTitle>
-          <CardDescription>自动聚合本周日报，AI 生成周报初稿</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Week selector */}
-          <div className="flex items-center gap-4">
-            <span className="text-sm font-medium">周区间：</span>
-            <Input
-              type="date"
-              value={weekStart}
-              onChange={(e) => setWeekStart(e.target.value)}
-              className="w-40"
-            />
-            <span className="text-sm text-muted-foreground">至</span>
-            <span className="text-sm font-medium">{weekEnd}</span>
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-3">
-            <Button variant="outline" onClick={handleAggregate} disabled={loadingAgg}>
-              {loadingAgg ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FileText className="mr-1 h-4 w-4" />}
-              聚合日报
-            </Button>
-            <Button onClick={handleGenerate} disabled={generating || dailyReports.length === 0} className="text-violet-600">
-              {generating ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Wand2 className="mr-1 h-4 w-4" />}
-              AI 生成周报
-            </Button>
-            <Button variant="default" onClick={handleSave} disabled={saving || !weeklyContent.trim()}>
-              {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
-              保存周报
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setShowWeeklyHistory(!showWeeklyHistory)}>
-              <History className="mr-1 h-4 w-4" />
-              历史 ({weeklyHistory.length})
-            </Button>
-          </div>
-
-          {message && (
-            <div className={`text-sm p-2 rounded ${message.includes("失败") ? "bg-destructive/10 text-destructive" : "bg-emerald-500/10 text-emerald-600"}`}>
-              {message}
-            </div>
-          )}
-
-          {/* Daily reports list */}
-          {dailyReports.length > 0 && (
-            <details className="text-sm">
-              <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-                本周日报 ({dailyReports.length} 篇)
-              </summary>
-              <div className="mt-2 space-y-1 pl-4 border-l-2 border-muted">
-                {dailyReports.map((r: any) => (
-                  <div key={r.id} className="text-xs text-muted-foreground">
-                    <span className="font-medium">{r.date}</span>: {r.content.slice(0, 60).replace(/\n/g, " ")}...
-                  </div>
-                ))}
-              </div>
-            </details>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Weekly Report Preview/Editor */}
-      {weeklyContent && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{weekLabel} 周报</CardTitle>
-            <CardDescription>审核修改后保存</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Textarea
-              value={weeklyContent}
-              onChange={(e) => setWeeklyContent(e.target.value)}
-              rows={20}
-              className="resize-none font-mono text-sm"
-            />
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Weekly History */}
-      {showWeeklyHistory && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <History className="h-4 w-4" />
-              周报历史 ({weeklyHistory.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {weeklyHistory.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">暂无周报记录</p>
-            ) : (
-              <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                {weeklyHistory.map((r: any) => (
-                  <WeeklyHistoryItem key={r.id} report={r} onLoad={(c) => setWeeklyContent(c)} />
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  )
-}
-
-function WeeklyHistoryItem({ report, onLoad }: { report: any; onLoad: (c: string) => void }) {
-  const [expanded, setExpanded] = useState(false)
-  return (
-    <div className="rounded-lg border hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => setExpanded(!expanded)}>
-      <div className="flex items-center justify-between p-3">
-        <div className="flex items-center gap-2">
-          <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`} />
-          <span className="text-sm font-medium">{report.week_start} - {report.week_end} 周报</span>
-        </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); onLoad(report.content) }} title="加载到编辑器">
-          <Edit3 className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-      {expanded && (
-        <div className="px-4 pb-4 border-t">
-          <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed mt-3 bg-muted/30 p-3 rounded-md">{report.content}</pre>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function getMonday(d = new Date()) {
-  const day = d.getDay()
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-  const monday = new Date(d.setDate(diff))
-  return monday.toISOString().slice(0, 10)
-}
-
-function getFriday(mondayStr: string) {
-  const monday = new Date(mondayStr)
-  const friday = new Date(monday)
-  friday.setDate(monday.getDate() + 4)
-  return friday.toISOString().slice(0, 10)
 }

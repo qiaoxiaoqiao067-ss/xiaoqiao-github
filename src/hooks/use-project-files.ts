@@ -1,0 +1,19 @@
+"use client"
+import { useCallback, useEffect, useState } from "react"
+
+export type ContractInfo={party_a?:string;party_b?:string;amount?:string;copyright_scope?:string;authorization_term?:string;territory?:string;payment_terms?:string;delivery_terms?:string;invoice_terms?:string;effective_date?:string;uncertainties?:string[];reviewed?:boolean}
+export type ProjectAsset={id:string;user_id:string;project_id:string;category:string;title:string;version:number;status:"active"|"final"|"delivered"|"archived";notes:string|null;stage?:string;timeline_item_id?:string|null;file_name?:string;mime_type?:string;file_size?:number;storage_path?:string;text_content?:string;contract_info?:ContractInfo;created_at:string;updated_at:string}
+async function json(response:Response){const data=await response.json();if(!response.ok)throw new Error(data.error||"项目文件操作失败");return data}
+export function useProjectFiles(projectId?:string){
+  const [files,setFiles]=useState<ProjectAsset[]>([]);const [loading,setLoading]=useState(true);const [error,setError]=useState<string|null>(null)
+  const refetch=useCallback(async()=>{setLoading(true);setError(null);try{const query=projectId?`?projectId=${encodeURIComponent(projectId)}`:"";const data=await json(await fetch(`/api/project-files${query}`,{cache:"no-store"}));setFiles(data.files||[])}catch(caught){setError(caught instanceof Error?caught.message:"加载项目文件失败")}finally{setLoading(false)}},[projectId])
+  const uploadFile=useCallback(async(input:{file:File;projectId:string;category:string;stage?:string;timelineItemId?:string|null;notes?:string;status?:ProjectAsset["status"]})=>{const form=new FormData();form.set("file",input.file);form.set("projectId",input.projectId);form.set("category",input.category);form.set("stage",input.stage||"");form.set("timelineItemId",input.timelineItemId||"");form.set("notes",input.notes||"");form.set("status",input.status||"active");const data=await json(await fetch("/api/project-files",{method:"POST",body:form}));setFiles((current)=>[data.file as ProjectAsset,...current]);return data.file as ProjectAsset},[])
+  const addText=useCallback(async(input:{title:string;text:string;projectId:string;category:string;stage?:string;timelineItemId?:string|null;notes?:string;status?:ProjectAsset["status"]})=>{const form=new FormData();form.set("title",input.title);form.set("text",input.text);form.set("projectId",input.projectId);form.set("category",input.category);form.set("stage",input.stage||"");form.set("timelineItemId",input.timelineItemId||"");form.set("notes",input.notes||"");form.set("status",input.status||"active");const data=await json(await fetch("/api/project-files",{method:"POST",body:form}));setFiles((current)=>[data.file as ProjectAsset,...current]);return data.file as ProjectAsset},[])
+  const updateFile=useCallback(async(id:string,updates:Partial<Pick<ProjectAsset,"status"|"notes"|"stage"|"timeline_item_id"|"contract_info">>)=>{const data=await json(await fetch("/api/project-files",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,...updates})}));setFiles((current)=>current.map((item)=>item.id===id?data.file as ProjectAsset:item));return data.file as ProjectAsset},[])
+  const extractContract=useCallback(async(id:string)=>{const data=await json(await fetch(`/api/project-files/${encodeURIComponent(id)}/extract-contract`,{method:"POST"}));setFiles((current)=>current.map((item)=>item.id===id?data.file as ProjectAsset:item));return data.file as ProjectAsset},[])
+  const deleteFile=useCallback(async(id:string)=>{await json(await fetch(`/api/project-files?id=${encodeURIComponent(id)}`,{method:"DELETE"}));setFiles((current)=>current.filter((item)=>item.id!==id))},[])
+  useEffect(()=>{ // Initial remote project file synchronization.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refetch()
+  },[refetch]);return{files,loading,error,uploadFile,addText,updateFile,deleteFile,extractContract,refetch}
+}

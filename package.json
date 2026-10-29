@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test:adx-schedule": "tsx --test tests/adx-scheduler.test.ts",
     "lint": "eslint"
   },
   "dependencies": {
@@ -42,6 +43,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",
     "tailwindcss-animate": "^1.0.7",
+    "tsx": "^4.23.0",
     "undici": "^6.29.0",
     "xlsx": "^0.18.5",
     "zod": "^4.4.3"

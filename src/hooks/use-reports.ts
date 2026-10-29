@@ -53,9 +53,10 @@ export function useReports() {
       const json = await apiCall("/api/reports")
       console.log("[useReports] got reports:", json.reports?.length || 0, "items")
       setReports(json.reports || [])
-    } catch (e: any) {
-      console.error("[useReports] fetch error:", e.message)
-      setError(e.message)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "日报加载失败"
+      console.error("[useReports] fetch error:", message)
+      setError(message)
     } finally {
       setLoading(false)
     }
@@ -63,12 +64,12 @@ export function useReports() {
 
   const fetchTodayDraft = useCallback(async () => {
     try {
-      const userId = await getUserId()
       const today = new Date().toISOString().slice(0, 10)
-      const json = await apiCall(`/api/reports?date=${today}&userId=${userId}&status=draft`)
-      // GET only returns finals by default, so we need a different approach
-      // For simplicity, skip draft loading for now and use the reports list
-    } catch {}
+      const json = await apiCall(`/api/reports?date=${today}&status=draft`)
+      setTodayDraft(json.reports?.[0] || null)
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : "草稿加载失败")
+    }
   }, [])
 
   const saveDraft = useCallback(async (date: string, content: string) => {
@@ -91,17 +92,6 @@ export function useReports() {
   const finalizeReport = useCallback(async (date: string, content: string) => {
     const userId = await getUserId()
 
-    // Delete existing draft for same date
-    try {
-      const today = new Date().toISOString().slice(0, 10)
-      // Find any draft for today
-      const allJson = await apiCall("/api/reports")
-      const drafts = (allJson.reports || []).filter(
-        (r: DailyReport) => r.date === date && r.status === "draft"
-      )
-      // Note: we need to handle this differently since GET only returns finals
-    } catch {}
-
     const json = await apiCall("/api/reports", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -120,7 +110,13 @@ export function useReports() {
   }, [])
 
   const markSentToLark = useCallback(async (id: string) => {
-    // Not critical for now, skip
+    const json = await apiCall("/api/reports", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, sentToLark: true }),
+    })
+    setReports((current) => current.map((report) => report.id === id ? json.report : report))
+    return json.report as DailyReport
   }, [])
 
   const deleteReport = useCallback(async (id: string) => {
@@ -130,8 +126,11 @@ export function useReports() {
   }, [])
 
   useEffect(() => {
+    // Initial remote report synchronization.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchReports()
-  }, [fetchReports])
+    fetchTodayDraft()
+  }, [fetchReports, fetchTodayDraft])
 
   return {
     reports,
@@ -192,11 +191,14 @@ export function parseReportContent(content: string): ReportFormData {
 }
 
 export function checkReportQuality(content: string): { pass: boolean; checks: { label: string; ok: boolean }[] } {
+  const todayWork = content.match(/一、今日工作\n([\s\S]*?)(?:\n\n二、|\n二、)/)?.[1] || ""
+  const tomorrowPlan = content.match(/二、明日工作\n([\s\S]*?)(?:\n\n三、|\n三、)/)?.[1] || ""
   const insight = content.match(/三、今日心得\n([\s\S]*?)(?:\n\n四、|\n四、)/)?.[1] || ""
   const reflection = content.match(/四、复盘反思\n([\s\S]*)$/)?.[1] || ""
 
   const checks = [
     { label: "包含四个完整标题", ok: ["一、今日工作", "二、明日工作", "三、今日心得", "四、复盘反思"].every((t) => content.includes(t)) },
+    { label: "四项内容均已填写", ok: [todayWork, tomorrowPlan, insight, reflection].every((value) => value.trim() && !value.includes("（待填写）")) },
     { label: "标题包含日期", ok: /\d{4}年\d{1,2}月\d{1,2}日/.test(content) },
     { label: "总字数 ≤ 400 字", ok: content.replace(/\s/g, "").length <= 400 },
     { label: "无 Markdown 标记", ok: !/[#\-\*]/.test(content.replace(/[一二三四]、/g, "")) },

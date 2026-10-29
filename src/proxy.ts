@@ -21,6 +21,13 @@ export async function proxy(request: NextRequest) {
     "/docs",
     "/content",
     "/ai-learning",
+    "/projects",
+    "/market-data",
+    "/discover",
+    "/research",
+    "/meetings",
+    "/knowledge",
+    "/localization",
     "/settings",
   ]
 

@@ -1,0 +1,17 @@
+import { randomUUID } from "node:crypto"
+import { join } from "node:path"
+import { NextResponse } from "next/server"
+import mammoth from "mammoth"
+import { PDFParse } from "pdf-parse"
+import { requireUser } from "@/lib/supabase/require-user"
+import { serviceClient } from "@/lib/supabase/service"
+import { runCodex } from "@/lib/ai/codex"
+
+let workerReady=false
+const GENRES=["豪门与婚恋情感","复仇与逆袭","黑帮与犯罪","狼人、吸血鬼与超自然","BL与同性情感","家庭伦理与亲子","悬疑惊悚与谜案","奇幻、重生与规则","校园与青春","职场专业剧","生存、末日与科幻","动作、竞技与体育","历史、年代与西部","喜剧与轻喜","其他待归类"]
+const TAGS=["女频","男频","BL","豪门","黑帮","狼人","吸血鬼","契约婚姻","闪婚","追妻","先婚后爱","禁忌恋","年龄差","多角关系","复仇","隐藏身份","重生","穿越","萌宝","家庭背叛","甜宠","虐恋","医疗","律政","校园","体育","求生"]
+const ext=(name:string)=>name.split(".").pop()?.toLowerCase()||""
+async function extract(file:File){const type=ext(file.name);if(type==="txt"||type==="md")return (await file.text()).trim();if(type==="docx")return (await mammoth.extractRawText({buffer:Buffer.from(await file.arrayBuffer())})).value.trim();if(type==="pdf"){if(!workerReady){PDFParse.setWorker(join(process.cwd(),"node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"));workerReady=true}const parser=new PDFParse({data:new Uint8Array(await file.arrayBuffer())});try{return (await parser.getText()).text.trim()}finally{await parser.destroy()}}throw new Error("仅支持 DOCX、PDF、TXT、Markdown")}
+function json(text:string){const clean=text.trim().replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"");return JSON.parse(clean.slice(clean.indexOf("{"),clean.lastIndexOf("}")+1)) as Record<string,unknown>}
+
+export async function POST(request:Request){try{const {user,response}=await requireUser();if(response)return response;const form=await request.formData();const file=form.get("file");if(!(file instanceof File))return NextResponse.json({error:"请选择文件"},{status:400});if(file.size>50*1024*1024)return NextResponse.json({error:"文件不能超过50MB"},{status:400});const text=await extract(file);if(!text)return NextResponse.json({error:"文件没有可识别文字"},{status:400});const itemId=String(form.get("itemId")||"");if(!itemId){let suggestions:Record<string,unknown>={};try{suggestions=json(await runCodex(`你是海外AI真人短剧知识编辑。只依据以下剧本或拆解文档，提出待人工确认的归类建议。主类型必须从给定列表选一个，标签只能从给定列表选择。不得虚构。只输出JSON：{"title":"作品名称","logline":"一句话梗概","relationships":"主要人物关系","primaryGenre":"主类型","tags":["标签"]}\n主类型：${GENRES.join("、")}\n标签：${TAGS.join("、")}\n\n${text.slice(0,60000)}`,90000))}catch{}return NextResponse.json({content:text,suggestions})}const {data:item,error:itemError}=await serviceClient.from("knowledge_items").select("id,content").eq("id",itemId).eq("user_id",user.id).maybeSingle();if(itemError)throw itemError;if(!item)return NextResponse.json({error:"知识条目不存在"},{status:404});const safe=file.name.normalize("NFKD").replace(/[^\x00-\x7F]/g,"-").replace(/[^A-Za-z0-9._-]+/g,"-").slice(0,160)||"knowledge";const path=`${user.id}/knowledge/${itemId}/${randomUUID()}-${safe}`;const {error:uploadError}=await serviceClient.storage.from("content-files").upload(path,Buffer.from(await file.arrayBuffer()),{contentType:file.type||"application/octet-stream"});if(uploadError)throw uploadError;const {error:updateError}=await serviceClient.from("knowledge_items").update({attachment_name:file.name,attachment_path:path,...(!item.content?{content:text}:{}),updated_at:new Date().toISOString()}).eq("id",itemId).eq("user_id",user.id);if(updateError)throw updateError;return NextResponse.json({attachmentName:file.name,attachmentPath:path})}catch(error){return NextResponse.json({error:error instanceof Error?error.message:"文件处理失败"},{status:500})}}

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { createClient } from "@/lib/supabase/client"
 
 export type ContentItem = {
   id: string
@@ -16,7 +17,8 @@ export type ContentItem = {
   tags: string[] | null
   created_at: string
   updated_at: string
-  content_files: Array<{ id: string; file_name: string; version: number; parse_status: string }>
+  archived_at?: string | null
+  content_files: Array<{ id: string; file_name: string; version: number; parse_status: string; created_at?: string }>
   content_reviews: Array<{
     id: string
     reviewer_type: string
@@ -39,22 +41,40 @@ type NewContent = {
   tags?: string[]
 }
 
+class RequestError extends Error {
+  constructor(message: string, readonly status: number) { super(message) }
+}
+
 async function request(path: string, options?: RequestInit) {
   const response = await fetch(path, { cache: "no-store", ...options })
   const data = await response.json()
-  if (!response.ok) throw new Error(data.error || "Request failed")
+  if (!response.ok) throw new RequestError(data.error || "Request failed", response.status)
   return data
+}
+
+async function refreshUploadSession(force = false) {
+  try {
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const expiring = !session?.expires_at || session.expires_at * 1000 - Date.now() < 3 * 60 * 1000
+    if (!force && session && !expiring) return true
+    const { data, error } = await supabase.auth.refreshSession()
+    return !error && Boolean(data.session)
+  } catch { return false }
 }
 
 export function useContents() {
   const [contents, setContents] = useState<ContentItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const fetchingRef = useRef(false)
+  const latestRequestRef = useRef(0)
 
   const fetchContents = useCallback(async (q?: string, status?: string, options?: { silent?: boolean }) => {
-    if (fetchingRef.current) return
-    fetchingRef.current = true
+    // Upload completion, search and background review polling may refresh at
+    // the same time. Let them run concurrently, but only let the newest request
+    // update the list so an older response cannot overwrite newly uploaded data.
+    const requestId = latestRequestRef.current + 1
+    latestRequestRef.current = requestId
     const silent = Boolean(options?.silent)
     if (!silent) {
       setLoading(true)
@@ -81,12 +101,11 @@ export function useContents() {
         }
       }
       if (!data) throw lastError || new Error("内容加载失败")
-      setContents(data.contents || [])
+      if (requestId === latestRequestRef.current) setContents(data.contents || [])
     } catch (caught: unknown) {
-      if (!silent) setError(caught instanceof Error ? caught.message : "加载失败")
+      if (!silent && requestId === latestRequestRef.current) setError(caught instanceof Error ? caught.message : "加载失败")
     } finally {
-      fetchingRef.current = false
-      if (!silent) setLoading(false)
+      if (!silent && requestId === latestRequestRef.current) setLoading(false)
     }
   }, [])
 
@@ -103,21 +122,42 @@ export function useContents() {
   const uploadScripts = useCallback(async (
     files: File[],
     contentType: ContentItem["content_type"] = "submission",
-    onProgress?: (completed: number, total: number) => void,
+    onProgress?: (completed: number, total: number, result: { fileName: string; success: boolean; error?: string; updatedVersion?: boolean; authExpired?: boolean }) => void,
+    uploadIds?: string[],
   ) => {
-    const results: Array<{ fileName: string; success: boolean; error?: string; updatedVersion?: boolean }> = []
+    const results: Array<{ fileName: string; success: boolean; error?: string; updatedVersion?: boolean; authExpired?: boolean }> = []
+    if (!await refreshUploadSession()) {
+      return files.map((file) => ({ fileName: file.name, success: false, error: "登录已失效，文件已保存在待续传队列", authExpired: true }))
+    }
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index]
       const form = new FormData()
       form.set("file", file)
       form.set("contentType", contentType)
+      if (uploadIds?.[index]) form.set("uploadId", uploadIds[index])
       try {
-        const data = await request("/api/contents/upload", { method: "POST", body: form })
-        results.push({ fileName: file.name, success: true, updatedVersion: Boolean(data.updatedVersion) })
+        let data
+        try {
+          data = await request("/api/contents/upload", { method: "POST", body: form })
+        } catch (caught) {
+          if (!(caught instanceof RequestError) || caught.status !== 401 || !await refreshUploadSession(true)) throw caught
+          data = await request("/api/contents/upload", { method: "POST", body: form })
+        }
+        const result = { fileName: file.name, success: true, updatedVersion: Boolean(data.updatedVersion) }
+        results.push(result)
+        onProgress?.(index + 1, files.length, result)
       } catch (caught: unknown) {
-        results.push({ fileName: file.name, success: false, error: caught instanceof Error ? caught.message : "上传失败" })
+        const authExpired = caught instanceof RequestError && caught.status === 401
+        const result = { fileName: file.name, success: false, error: authExpired ? "登录已失效，文件已保存在待续传队列" : caught instanceof Error ? caught.message : "上传失败", authExpired }
+        results.push(result)
+        onProgress?.(index + 1, files.length, result)
+        if (authExpired) {
+          for (let rest = index + 1; rest < files.length; rest += 1) {
+            results.push({ fileName: files[rest].name, success: false, error: "等待重新登录后继续上传", authExpired: true })
+          }
+          break
+        }
       }
-      onProgress?.(index + 1, files.length)
     }
     await fetchContents()
     return results
@@ -138,11 +178,21 @@ export function useContents() {
     return data.content
   }, [])
 
+  const updateContent = useCallback(async (id: string, updates: Partial<Omit<NewContent, "contentType">> & { contentType?: ContentItem["content_type"]; status?: ContentItem["status"] }) => {
+    const data = await request("/api/contents", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...updates }),
+    }) as { content: ContentItem }
+    setContents((current) => current.map((item) => item.id === id ? { ...item, ...data.content } : item))
+    return data.content
+  }, [])
+
   useEffect(() => {
     // Initial remote data synchronization.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchContents()
   }, [fetchContents])
 
-  return { contents, loading, error, fetchContents, addContent, uploadScripts, deleteContent, setContentStatus }
+  return { contents, loading, error, fetchContents, addContent, uploadScripts, deleteContent, setContentStatus, updateContent }
 }

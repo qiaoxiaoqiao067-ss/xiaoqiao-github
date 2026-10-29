@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Sparkles, LogIn, Mail, Lock, Loader2, ArrowLeft, Send } from "lucide-react"
+import { getQueuedContentUploads } from "@/lib/uploads/content-upload-queue"
 
 function authErrorMessage(message: string) {
   const normalized = message.toLowerCase()
@@ -24,8 +25,13 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [mode, setMode] = useState<"login" | "forgot">("login")
+  const [pendingUploads, setPendingUploads] = useState(0)
   const router = useRouter()
   const supabase = createClient()
+
+  useEffect(() => {
+    void getQueuedContentUploads().then((items) => setPendingUploads(items.length)).catch(() => undefined)
+  }, [])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -41,7 +47,9 @@ export default function LoginPage() {
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || "登录失败。")
-      router.push("/")
+      const requestedNext = new URLSearchParams(window.location.search).get("next")
+      const next = requestedNext?.startsWith("/") && !requestedNext.startsWith("//") ? requestedNext : "/"
+      router.push(next)
       router.refresh()
     } catch (loginError) {
       const message = loginError instanceof Error ? loginError.message : "登录失败。"
@@ -64,7 +72,9 @@ export default function LoginPage() {
     if (error) {
       setError(authErrorMessage(error.message))
     } else {
-      setMessage("注册成功，请检查邮箱中的确认链接。")
+      // 关闭邮箱确认后 Supabase 可能会直接创建会话；成员仍必须等待管理员授权。
+      await supabase.auth.signOut()
+      setMessage("注册成功，已提交管理员审核。获得权限后，使用此邮箱和密码登录即可。")
     }
     setLoading(false)
   }
@@ -112,6 +122,9 @@ export default function LoginPage() {
         </div>
 
         {/* Login Card */}
+        {pendingUploads > 0 && <div className="rounded-xl border border-[#d9b84d]/35 bg-[#fff7d6] px-4 py-3 text-sm text-[#725b14]">
+          有 {pendingUploads} 个剧本文件正在等待续传。登录后会自动返回责编审稿并继续，不需要重新选择文件。
+        </div>}
         <Card className="border-primary/10 bg-white/65 shadow-[0_24px_70px_rgba(18,59,45,.12)]">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

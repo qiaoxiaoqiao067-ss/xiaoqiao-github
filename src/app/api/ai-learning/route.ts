@@ -6,6 +6,10 @@ import { runCodex } from "@/lib/ai/codex"
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
+function errorMessage(error: unknown, fallback = "操作失败") {
+  return error instanceof Error ? error.message : fallback
+}
+
 function getClient() {
   return createClient(supabaseUrl, supabaseServiceKey)
 }
@@ -13,15 +17,17 @@ function getClient() {
 const today = new Date()
 const todayLabel = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`
 
-const SEARCH_PROMPT = `你是 AI 学习助手。请参考 WaytoAGI（通往AGI之路）知识库的内容风格和选题方向，从中选取你训练数据中确切知道的一个真实 AI 知识点，写成学习卡片。
+const SEARCH_PROMPT = `你是海外 AI 短剧行业学习助手。请只选择与用户工作直接相关、且你确切知道的一个知识点，写成可供内容策划、责编、编剧或 AI 制作人员使用的学习卡片。
 
-WaytoAGI 是国内最大的 AI 开源知识库，涵盖方向包括：
-- AI 市场动态与行业趋势
-- Prompt 提示词工程技巧
-- AI Agent 设计与开发
-- Skill/插件开发实践
-- AI 工具测评与推荐
-- 大模型原理与架构
+选题范围严格限定为：
+- 海外竖屏短剧平台、受众、题材与商业模式
+- 北美为主的短剧叙事、人物关系、前三集钩子和付费卡点
+- AI 仿真人短剧的剧本、分镜、角色一致性、视频生成、配音与后期流程
+- 中文剧本英文本地化、双语稿审核与海外文化适配
+- 责编审稿、选题、爆款拆解、项目复盘与内容方法论
+- 与上述工作直接相关的 AI 工具或制作技术
+
+不要输出泛 AI 新闻、通用办公效率、通用 Agent 开发、大模型原理或与短剧行业无关的工具介绍。
 
 ## 内容真实性要求（极其重要）
 - 只写你训练数据中确实验证过的、真实存在的知识
@@ -37,7 +43,7 @@ EMOJI 标题
 [emoji + 简洁标题，15字以内]
 
 分类
-[市场动态 / 提示词工程 / Skill开发 / Agent设计 / AI工具 / 模型原理]
+[平台趋势 / 题材洞察 / 剧本方法 / 本地化 / AI制作 / 责编方法]
 
 难度
 [入门 / 进阶 / 实战]
@@ -61,7 +67,7 @@ EMOJI 标题
 实践建议
 [具体的 next step]
 
-今天是${todayLabel}。请选择一个你确定真实存在且值得学习的 AI 知识点。优先选择 2025-2026 年间的新进展。
+今天是${todayLabel}。请选择一个真实、可执行且与海外 AI 短剧直接相关的知识点。若内容涉及会变化的平台数据或行业趋势，不得虚构具体数字；应说明需要结合最新外部来源核验。
 
 绝对不要使用 ##、**、*、- 、_ 等任何 Markdown 标记。纯文本即可。`
 
@@ -82,8 +88,8 @@ export async function GET(request: NextRequest) {
     const { data, error } = await query
     if (error) throw error
     return NextResponse.json({ learnings: data || [] })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (error: unknown) {
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 })
   }
 }
 
@@ -123,7 +129,7 @@ export async function POST(request: NextRequest) {
     }
 
     const titleLine = getSection("EMOJI 标题", getSection("EMOJI", "🤖 AI 今日要点"))
-    const category = getSection("分类", "AI工具")
+    const category = getSection("分类", "AI制作")
     const difficultyLabel = getSection("难度", "入门")
     const whyImportant = getSection("为什么重要", "")
     const coreContent = getSection("核心内容", generated)
@@ -155,8 +161,8 @@ export async function POST(request: NextRequest) {
     const title = titleLine.replace(/^[^\w一-鿿]+/, "").trim() || "AI 今日要点"
 
     // Map category to valid values
-    const validCategories = ["市场动态", "提示词工程", "Skill开发", "Agent设计", "AI工具", "模型原理"]
-    const safeCategory = validCategories.includes(category) ? category : "AI工具"
+    const validCategories = ["平台趋势", "题材洞察", "剧本方法", "本地化", "AI制作", "责编方法"]
+    const safeCategory = validCategories.includes(category) ? category : "AI制作"
 
     const { data, error } = await client
       .from("ai_learnings")
@@ -175,8 +181,8 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error
     return NextResponse.json({ learning: data })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || "生成失败" }, { status: 500 })
+  } catch (error: unknown) {
+    return NextResponse.json({ error: errorMessage(error, "生成失败") }, { status: 500 })
   }
 }
 
@@ -185,12 +191,12 @@ export async function PATCH(request: NextRequest) {
     const { user, response } = await requireUser()
     if (response) return response
 
-    const body = await request.json()
+    const body = await request.json() as { id?: string; notes?: string; learned?: boolean }
     const { id, notes, learned } = body
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 })
 
     const client = getClient()
-    const updates: any = {}
+    const updates: { notes?: string; learned?: boolean } = {}
     if (notes !== undefined) updates.notes = notes
     if (learned !== undefined) updates.learned = learned
 
@@ -204,7 +210,7 @@ export async function PATCH(request: NextRequest) {
 
     if (error) throw error
     return NextResponse.json({ learning: data })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (error: unknown) {
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 })
   }
 }

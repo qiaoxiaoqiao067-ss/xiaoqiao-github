@@ -33,12 +33,15 @@ export function useLocalization() {
   const updateJob = useCallback(async (id:string,updates:Partial<LocalizationInput>) => {
     const response=await fetch("/api/localization",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({entity:"job",id,updates})});const data=await response.json();if(!response.ok)throw new Error(data.error||"更新失败");setJobs((current)=>current.map((item)=>item.id===id?data.item as LocalizationJob:item));return data.item as LocalizationJob
   },[])
+  const deleteJob = useCallback(async (id:string) => {
+    const response=await fetch(`/api/localization?entity=job&id=${encodeURIComponent(id)}`,{method:"DELETE"});const data=await response.json();if(!response.ok)throw new Error(data.error||"删除失败");setJobs((current)=>current.filter((item)=>item.id!==id))
+  },[])
   const addProjectFile = useCallback(async (input:ProjectFileInput) => {
     const response=await fetch("/api/localization",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({entity:"file",data:input})});const data=await response.json();if(!response.ok)throw new Error(data.error||"保存失败");setFiles((current)=>[data.item as ProjectFile,...current]);return data.item as ProjectFile
   },[])
   const updateProjectFile = useCallback(async (id:string,updates:Partial<ProjectFileInput>) => {
     const response=await fetch("/api/localization",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({entity:"file",id,updates})});const data=await response.json();if(!response.ok)throw new Error(data.error||"更新失败");setFiles((current)=>current.map((item)=>item.id===id?data.item as ProjectFile:item));return data.item as ProjectFile
   },[])
-  useEffect(()=>{ void fetchAll() },[fetchAll])
-  return {jobs,files,loading,error,addJob,updateJob,addProjectFile,updateProjectFile,refetch:fetchAll}
+  useEffect(()=>{ const timer=window.setTimeout(()=>void fetchAll(),0);return()=>window.clearTimeout(timer) },[fetchAll])
+  return {jobs,files,loading,error,addJob,updateJob,deleteJob,addProjectFile,updateProjectFile,refetch:fetchAll}
 }

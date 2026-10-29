@@ -59,3 +59,15 @@ export async function PATCH(request:Request){
   const {data:document,error:documentError}=await serviceClient.from("documents").update({content:JSON.stringify(next),updated_at}).eq("id",idResult.data).eq("user_id",user.id).select().single();if(documentError)return NextResponse.json({error:documentError.message},{status:500})
   return NextResponse.json({item:parseDocument(document as Record<string,unknown>),storage:"documents"})
 }
+
+export async function DELETE(request:Request){
+  const {user,response}=await requireUser();if(response)return response
+  const url=new URL(request.url);const entityResult=entitySchema.safeParse(url.searchParams.get("entity"));const idResult=z.string().uuid().safeParse(url.searchParams.get("id"));if(!entityResult.success||!idResult.success)return NextResponse.json({error:"Invalid request"},{status:400})
+  const entity=entityResult.data;const table=entity==="job"?"localization_jobs":"project_files"
+  const {error}=await serviceClient.from(table).delete().eq("id",idResult.data).eq("user_id",user.id)
+  if(!error)return NextResponse.json({ok:true,storage:"dedicated"})
+  if(!missingTable(error))return NextResponse.json({error:error.message},{status:500})
+  const {error:documentError}=await serviceClient.from("documents").delete().eq("id",idResult.data).eq("user_id",user.id).eq("category",categoryFor(entity))
+  if(documentError)return NextResponse.json({error:documentError.message},{status:500})
+  return NextResponse.json({ok:true,storage:"documents"})
+}

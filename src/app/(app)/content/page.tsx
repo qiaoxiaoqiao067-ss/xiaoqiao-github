@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { AppLayout } from "@/components/layout/app-layout"
 import { PageHero } from "@/components/layout/page-hero"
@@ -14,6 +14,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Archive, BookOpen, FilePlus2, Loader2, Plus, RotateCcw, Search, Sparkles, Upload, X } from "lucide-react"
 import { Trash2 } from "lucide-react"
 import { DeleteContentDialog } from "@/components/content/delete-content-dialog"
+import { DataError } from "@/components/ui/data-error"
+import { enqueueContentFiles, getQueuedContentUploads, queuedUploadFile, removeQueuedContentUpload, updateQueuedContentUploadError, type QueuedContentUpload } from "@/lib/uploads/content-upload-queue"
 
 const TYPE_LABEL: Record<ContentItem["content_type"], string> = {
   submission: "投稿剧本",
@@ -21,6 +23,8 @@ const TYPE_LABEL: Record<ContentItem["content_type"], string> = {
   benchmark: "优秀对标",
   original: "我的创作",
 }
+
+const isApprovedVerdict = (verdict?: string) => verdict === "审核通过" || verdict === "推荐开发"
 
 export default function ContentPage() {
   const { contents, loading, error, fetchContents, addContent, uploadScripts, deleteContent, setContentStatus } = useContents()
@@ -37,6 +41,8 @@ export default function ContentPage() {
   const [uploadProgress, setUploadProgress] = useState("")
   const [uploadMessage, setUploadMessage] = useState("")
   const [uploadErrors, setUploadErrors] = useState<Array<{ fileName: string; error?: string; updatedVersion?: boolean }>>([])
+  const [queuedUploads, setQueuedUploads] = useState<QueuedContentUpload[]>([])
+  const resumedQueue = useRef(false)
   const [batchReviewing, setBatchReviewing] = useState(false)
   const [queueingIds, setQueueingIds] = useState<string[]>([])
   const [batchReviewProgress, setBatchReviewProgress] = useState("")
@@ -60,26 +66,60 @@ export default function ContentPage() {
     }
   }
 
-  const handleFiles = async (files: FileList | null) => {
-    if (!files?.length) return
+  const processQueuedUploads = useCallback(async (entries: QueuedContentUpload[]) => {
+    if (!entries.length) return
     setUploading(true)
     setUploadMessage("")
     setUploadErrors([])
-    const selected = Array.from(files)
-    const results = await uploadScripts(selected, uploadType, (completed, total) => {
-      setUploadProgress(`${completed}/${total}`)
-    })
-    const succeeded = results.filter((result) => result.success).length
-    const failed = results.length - succeeded
-    const updatedVersions = results.filter((result) => result.success && result.updatedVersion).length
+    let completedOverall = 0
+    let authExpired = false
+    const allResults: Array<{ fileName: string; success: boolean; error?: string; updatedVersion?: boolean; authExpired?: boolean }> = []
+    for (const contentType of ["submission", "development", "benchmark", "original"] as const) {
+      const group = entries.filter((entry) => entry.contentType === contentType)
+      if (!group.length || authExpired) continue
+      const results = await uploadScripts(group.map(queuedUploadFile), contentType, (completed) => {
+        setUploadProgress(`${completedOverall + completed}/${entries.length}`)
+      }, group.map((entry) => entry.id))
+      for (let index = 0; index < results.length; index += 1) {
+        const result = results[index]
+        const entry = group[index]
+        if (!entry) continue
+        if (result.success) await removeQueuedContentUpload(entry.id)
+        else await updateQueuedContentUploadError(entry.id, result.error || "上传失败")
+        allResults.push(result)
+        if (result.authExpired) authExpired = true
+      }
+      completedOverall += results.filter((result) => result.success || !result.authExpired).length
+    }
+    const succeeded = allResults.filter((result) => result.success).length
+    const failed = allResults.filter((result) => !result.success && !result.authExpired).length
+    const updatedVersions = allResults.filter((result) => result.success && result.updatedVersion).length
     const created = succeeded - updatedVersions
     const summary = updatedVersions ? `新建 ${created} 个，更新版本 ${updatedVersions} 个` : `已成功导入 ${succeeded} 个剧本`
-    setUploadMessage(failed ? `${summary}，失败 ${failed} 个` : summary)
-    setUploadErrors(results.filter((result) => !result.success))
+    setUploadMessage(authExpired ? `${summary}。登录已失效，未完成文件已安全保存，重新登录后会继续。` : failed ? `${summary}，失败 ${failed} 个；文件仍保留在待续传队列。` : summary)
+    setUploadErrors(allResults.filter((result) => !result.success && !result.authExpired))
+    setQueuedUploads(await getQueuedContentUploads())
     setUploadProgress("")
     setUploading(false)
+    if (authExpired) window.location.assign("/login?next=/content")
+  }, [uploadScripts])
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files?.length) return
+    const entries = await enqueueContentFiles(Array.from(files), uploadType)
+    setQueuedUploads((current) => [...current, ...entries])
+    await processQueuedUploads(entries)
     if (fileInput.current) fileInput.current.value = ""
   }
+
+  useEffect(() => {
+    if (resumedQueue.current) return
+    resumedQueue.current = true
+    void getQueuedContentUploads().then((entries) => {
+      setQueuedUploads(entries)
+      if (entries.length) void processQueuedUploads(entries)
+    })
+  }, [processQueuedUploads])
 
   const createContent = async () => {
     if (!title.trim()) return
@@ -138,8 +178,9 @@ export default function ContentPage() {
 
   const hasCompletedAiReview = (item: ContentItem) => item.content_reviews.some((review) => review.reviewer_type === "ai" && review.status === "completed" && review.score !== null)
   const latestAiScore = (item: ContentItem) => {
-    const review = item.content_reviews.find((candidate) => candidate.reviewer_type === "ai" && candidate.status === "completed" && candidate.score !== null)
-    return review?.score ?? 0
+    return item.content_reviews
+      .filter((candidate) => candidate.reviewer_type === "ai" && candidate.status === "completed" && candidate.score !== null)
+      .reduce((highest, candidate) => Math.max(highest, candidate.score ?? 0), 0)
   }
   const latestReview = (item: ContentItem, reviewerType: "ai" | "human") => item.content_reviews
     .filter((review) => review.reviewer_type === reviewerType && review.status === "completed")
@@ -156,7 +197,7 @@ export default function ContentPage() {
   const reviewed = contents.filter(hasCompletedAiReview).length
   const waiting = contents.filter((item) => !hasCompletedAiReview(item)).length
   const highScore = contents.filter((item) => hasCompletedAiReview(item) && latestAiScore(item) >= 80).length
-  const recommended = contents.filter((item) => hasCompletedAiReview(item) && item.content_reviews.some((review) => review.reviewer_type === "human" && review.is_final && review.result?.verdict === "推荐开发")).length
+  const recommended = contents.filter((item) => item.content_reviews.some((review) => review.reviewer_type === "human" && review.status === "completed" && review.is_final && isApprovedVerdict(review.result?.verdict))).length
   const archived = contents.filter((item) => item.status === "archived").length
   const visibleContents = contents.filter((item) => {
     const source = (item.source || "").toLowerCase()
@@ -166,7 +207,7 @@ export default function ContentPage() {
     if (view === "pending") return !hasCompletedAiReview(item)
     if (view === "reviewed") return hasCompletedAiReview(item)
     if (view === "high") return hasCompletedAiReview(item) && latestAiScore(item) >= 80
-    if (view === "recommended") return hasCompletedAiReview(item) && item.content_reviews.some((review) => review.reviewer_type === "human" && review.is_final && review.result?.verdict === "推荐开发")
+    if (view === "recommended") return item.content_reviews.some((review) => review.reviewer_type === "human" && review.status === "completed" && review.is_final && isApprovedVerdict(review.result?.verdict))
     if (view === "archived") return item.status === "archived"
     return item.status !== "archived"
   }).sort((a, b) => {
@@ -185,9 +226,9 @@ export default function ContentPage() {
   return (
     <AppLayout>
       <div className="space-y-6">
-        <PageHero eyebrow="投稿 · AI初审 · 人工判断" title="收稿审稿" description="管理投稿、开发项目、对标内容和个人创作，让每个故事都有清晰的下一步。" action={<div className="flex flex-col gap-2 sm:flex-row">
+        <PageHero eyebrow="投稿 · AI初审 · 人工判断" title="责编审稿" description="管理投稿、开发项目、对标内容和个人创作，让每个故事都有清晰的下一步。" action={<div className="flex flex-col gap-2 sm:flex-row">
             <input ref={fileInput} type="file" multiple accept=".docx,.pdf,.txt,.md" className="hidden" onChange={(event) => void handleFiles(event.target.files)} />
-            <select value={uploadType} onChange={(event) => setUploadType(event.target.value as ContentItem["content_type"])} className="h-9 rounded-md border border-white/20 bg-white/5 px-2 text-xs text-white"><option className="text-foreground" value="submission">投稿剧本</option><option className="text-foreground" value="benchmark">优秀对标库</option><option className="text-foreground" value="development">重点开发</option><option className="text-foreground" value="original">我的创作</option></select>
+            <select value={uploadType} onChange={(event) => setUploadType(event.target.value as ContentItem["content_type"])} className="h-9 rounded-md border border-[#c9f45a]/60 bg-[#235a43] px-2 text-xs font-semibold text-[#efffd1] shadow-sm"><option className="bg-white text-[#173f31]" value="submission">投稿剧本</option><option className="bg-white text-[#173f31]" value="benchmark">优秀对标库</option><option className="bg-white text-[#173f31]" value="development">重点开发</option><option className="bg-white text-[#173f31]" value="original">我的创作</option></select>
             <Button variant="outline" disabled={uploading} onClick={() => fileInput.current?.click()} className="gap-2 border-white/20 bg-white/5 text-white hover:bg-white hover:text-[#102a21]">
               {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               {uploading ? `上传中 ${uploadProgress}` : uploadType === "benchmark" ? "导入优秀对标" : "批量上传剧本"}
@@ -209,7 +250,12 @@ export default function ContentPage() {
           </div>}
         </div>}
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {queuedUploads.length > 0 && !uploading && <div className="flex flex-col gap-3 rounded-xl border border-amber-300/50 bg-amber-50/70 p-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+          <div><p className="font-semibold">待续传文件 {queuedUploads.length} 个</p><p className="mt-1 text-xs text-amber-800">{queuedUploads.slice(0, 3).map((item) => item.fileName).join("、")}{queuedUploads.length > 3 ? ` 等 ${queuedUploads.length} 个` : ""}</p></div>
+          <Button size="sm" variant="outline" onClick={() => void processQueuedUploads(queuedUploads)}><RotateCcw className="mr-1 h-3.5 w-3.5"/>继续上传</Button>
+        </div>}
+
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
           <Stat label="全部内容" value={loading ? "—" : contents.length} />
           <Stat label="待处理" value={loading ? "—" : waiting} />
           <Stat label="已审核" value={loading ? "—" : reviewed} />
@@ -245,12 +291,12 @@ export default function ContentPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {([{key:"all",label:"当前剧本"},{key:"pending",label:"待处理"},{key:"reviewed",label:"已审核"},{key:"high",label:"高分候选"},{key:"recommended",label:"推荐开发"},{key:"archived",label:`历史归档 ${archived}`}] as const).map((item) => <Button key={item.key} variant={view === item.key ? "default" : "outline"} size="sm" onClick={() => setView(item.key)}>{item.label}</Button>)}
+          {([{key:"all",label:`全部内容 ${contents.length}`},{key:"pending",label:`待处理 ${waiting}`},{key:"reviewed",label:`已审核 ${reviewed}`},{key:"high",label:`高分候选 ${highScore}`},{key:"recommended",label:`推荐开发 ${recommended}`},{key:"archived",label:`历史归档 ${archived}`}] as const).map((item) => <Button key={item.key} variant={view === item.key ? "default" : "outline"} size="sm" onClick={() => setView(item.key)}>{item.label}</Button>)}
           <select value={sortMode} onChange={(event) => setSortMode(event.target.value as typeof sortMode)} className="h-9 rounded-md border bg-background px-3 text-sm"><option value="newest">按最近更新</option><option value="score">按评分优先</option></select>
           <select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)} className="h-9 rounded-md border bg-background px-3 text-sm"><option>全部来源</option><option>邮箱收稿</option><option>小红书收稿</option><option>其他来源</option></select>
         </div>
 
-        {error && <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+        {error && <DataError error={error} onRetry={() => fetchContents(query)} />}
 
         {loading ? (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{[1, 2, 3].map((item) => <Skeleton key={item} className="h-48 rounded-xl" />)}</div>
@@ -264,10 +310,10 @@ export default function ContentPage() {
           <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
             {visibleContents.map((item) => (
               <div key={item.id} className="grid gap-3 border-b p-4 transition-colors last:border-b-0 hover:bg-muted/30 md:grid-cols-[minmax(180px,1.55fr)_92px_minmax(190px,1.35fr)_minmax(130px,1fr)_190px] md:items-center">
-                <div className="min-w-0"><div className="mb-1 flex items-center gap-2"><Badge variant="secondary" className="shrink-0 text-[10px]">{TYPE_LABEL[item.content_type]}</Badge><Badge variant={hasCompletedAiReview(item) ? "success" : "outline"} className={`shrink-0 text-[10px] ${hasCompletedAiReview(item) ? "" : "border-slate-300 bg-slate-100 text-slate-500"}`}>{hasCompletedAiReview(item) ? "AI审核完成" : item.status === "reviewing" ? "AI审核中" : "未完成审核"}</Badge></div><Link href={`/content/${item.id}`} className="block truncate font-medium hover:text-primary" title={item.title}>{item.title}</Link><p className="mt-1 truncate text-xs text-muted-foreground">{item.logline || "尚未填写一句话梗概"}</p></div>
-                <div className="text-sm">{(() => { const ai = item.content_reviews.find((review) => review.reviewer_type === "ai" && review.score !== null); const aiScore = ai?.score ?? null; return ai ? <span className="font-semibold text-primary">AI {aiScore}/100</span> : <span className="text-muted-foreground">未审核</span> })()}</div>
+                <div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><Badge variant="secondary" className="shrink-0 text-[10px]">{TYPE_LABEL[item.content_type]}</Badge><Badge variant={hasCompletedAiReview(item) ? "success" : "outline"} className={`shrink-0 text-[10px] ${hasCompletedAiReview(item) ? "" : "border-slate-300 bg-slate-100 text-slate-500"}`}>{hasCompletedAiReview(item) ? "AI审核完成" : item.status === "reviewing" ? "AI审核中" : "未完成审核"}</Badge>{latestReview(item,"ai")?.created_at&&<span className="text-[9px] text-muted-foreground">{new Date(latestReview(item,"ai")!.created_at!).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>}</div><Link href={`/content/${item.id}`} className="block truncate font-medium hover:text-primary" title={item.title}>{item.title}</Link><p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.logline || "自动梗概待补充"}</p>{item.status==="archived"&&item.archived_at&&<p className="mt-1 text-[9px] text-muted-foreground">归档于 {new Date(item.archived_at).toLocaleString("zh-CN")}</p>}</div>
+                <div className="text-sm">{hasCompletedAiReview(item) ? <span className="font-semibold text-primary">AI最高 {latestAiScore(item)}/100</span> : <span className="text-muted-foreground">未审核</span>}</div>
                 {(() => { const preview = reviewPreview(item); return <div className="min-w-0 border-l border-border/70 pl-3"><p className={`truncate text-xs font-semibold ${preview?.tone || "text-muted-foreground"}`}>{preview?.label || "暂无审核结论"}</p><p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground" title={preview?.text}>{preview?.text || "完成 AI 或人工审核后，会在此显示结论摘要。"}</p></div> })()}
-                <div className="space-y-1 text-xs text-muted-foreground"><p className="truncate">{item.source || "未标记来源"}</p><p className="flex items-center gap-1"><Sparkles className="h-3 w-3" />{item.content_reviews?.length || 0} 次审核</p></div>
+                <div className="space-y-1 text-xs text-muted-foreground"><p className="truncate">{item.source || "未标记来源"}</p><p className="flex items-center gap-1"><Sparkles className="h-3 w-3" />{hasCompletedAiReview(item) ? "AI已完成" : item.status === "reviewing" ? "AI审核中" : "AI待审核"}</p>{latestReview(item,"human")?.is_final&&<p className="font-medium text-[#205b43]">已人工终审</p>}{item.content_reviews.filter((review)=>review.reviewer_type==="ai"&&review.status==="failed").length>0&&<p className="text-[10px] text-amber-700">曾重试 {item.content_reviews.filter((review)=>review.reviewer_type==="ai"&&review.status==="failed").length} 次</p>}</div>
                 <div className="flex flex-wrap justify-start gap-2 md:justify-end"><Button asChild variant="outline" size="sm"><Link href={`/content/${item.id}`}>查看详情</Link></Button>{item.status === "archived" ? <Button size="sm" variant="outline" onClick={() => void setContentStatus(item.id,hasCompletedAiReview(item)?"reviewed":"ready")}><RotateCcw className="mr-1.5 h-3.5 w-3.5"/>恢复</Button> : <>{hasCompletedAiReview(item) || latestReview(item, "human") ? null : item.status === "reviewing" ? <Button variant="outline" size="sm" disabled><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />审核中</Button> : item.status === "ready" && item.content_files.some((file) => file.parse_status === "ready") ? <Button size="sm" disabled={queueingIds.includes(item.id)} onClick={() => void handleSingleReview(item)} className="bg-[#c9f45a] text-[#102a21] hover:bg-[#d8ff74]">{queueingIds.includes(item.id) ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}{queueingIds.includes(item.id) ? "加入中" : "开始审核"}</Button> : <Button variant="outline" size="sm" disabled>等待解析</Button>}<Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="移入历史归档" onClick={() => void setContentStatus(item.id,"archived")}><Archive className="h-4 w-4"/></Button></>}<Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title={`删除《${item.title}》`} aria-label={`删除${item.title}`} onClick={() => setDeleteTarget(item)}><Trash2 className="h-4 w-4" /></Button></div>
               </div>
             ))}
@@ -280,5 +326,5 @@ export default function ContentPage() {
 }
 
 function Stat({ label, value }: { label: string; value: number | string }) {
-  return <Card><CardContent className="p-4"><p className="text-2xl font-bold">{value}</p><p className="text-xs text-muted-foreground">{label}</p></CardContent></Card>
+  return <Card><CardContent className="px-3 py-2.5"><p className="text-xl font-bold leading-none">{value}</p><p className="mt-1 text-[10px] text-muted-foreground">{label}</p></CardContent></Card>
 }

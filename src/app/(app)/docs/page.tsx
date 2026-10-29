@@ -1,18 +1,19 @@
 "use client"
 
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef } from "react"
 import { AppLayout } from "@/components/layout/app-layout"
 import { PageHero } from "@/components/layout/page-hero"
 import { useDocuments, DOC_CATEGORIES, CAT_EMOJI, type Document } from "@/hooks/use-documents"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import Link from "next/link"
 import {
-  BookOpen, Plus, Search, Trash2, Edit3, Save, X, Upload, Copy,
-  FileText, Tag, FolderOpen, Eye, ChevronRight, Loader2, CheckCircle, FileUp
+  ArrowLeft, Plus, Search, Trash2, Edit3, Save, X,
+  FileText, FolderOpen, Loader2, FileUp
 } from "lucide-react"
 
 type ProcessedFile = {
@@ -24,7 +25,7 @@ type ProcessedFile = {
 }
 
 export default function DocsPage() {
-  const { documents, loading, error, addDocument, updateDocument, deleteDocument, fetchDocuments } = useDocuments()
+  const { documents, loading, addDocument, updateDocument, deleteDocument, fetchDocuments } = useDocuments()
   const [searchQuery, setSearchQuery] = useState("")
   const [filterCat, setFilterCat] = useState("全部")
   const [showAdd, setShowAdd] = useState(false)
@@ -34,7 +35,7 @@ export default function DocsPage() {
   // Add form
   const [newTitle, setNewTitle] = useState("")
   const [newContent, setNewContent] = useState("")
-  const [newCat, setNewCat] = useState("技术文档")
+  const [newCat, setNewCat] = useState("其他")
   const [newTags, setNewTags] = useState("")
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState("")
@@ -58,12 +59,14 @@ export default function DocsPage() {
   }
 
   const autoCategorize = (name: string): string => {
-    if (/周报|weekly/i.test(name)) return "周报"
-    if (/日报|daily/i.test(name)) return "日报"
-    if (/制度|规定|办法|标准|规范|手册/i.test(name)) return "制度文件"
+    if (/周报|日报|weekly|daily/i.test(name)) return "日报周报"
+    if (/合同|制度|规定|办法|标准|规范|手册/i.test(name)) return "合同制度"
     if (/纪要|会议|meeting/i.test(name)) return "会议纪要"
-    if (/模板|template/i.test(name)) return "模板"
-    if (/技术|方案|设计|spec|架构|api/i.test(name)) return "技术文档"
+    if (/模板|工具|template/i.test(name)) return "模板工具"
+    if (/市场|榜单|调研|adx|trend/i.test(name)) return "市场与调研"
+    if (/剧本|选题|大纲|分集/i.test(name)) return "剧本与选题"
+    if (/项目|交付|围读|制作/i.test(name)) return "项目资料"
+    if (/行业|报告|海外短剧|ai短剧/i.test(name)) return "行业资料"
     return "其他"
   }
 
@@ -130,7 +133,7 @@ export default function DocsPage() {
     for (const file of Array.from(files)) {
       try {
         const r = await processFile(file)
-        const key = `${Date.now()}-${Math.random()}`
+        const key = `${file.name}-${file.size}-${file.lastModified}-${results.length}`
         fileRefs.current.set(key, file)
         results.push({ key, name: file.name, ...r })
       } catch {}
@@ -141,11 +144,11 @@ export default function DocsPage() {
     setTimeout(() => setMsg(""), 3000)
   }
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
     if (e.dataTransfer.files.length > 0) processFiles(e.dataTransfer.files)
-  }, [])
+  }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) processFiles(e.target.files)
@@ -173,8 +176,8 @@ export default function DocsPage() {
             const file = fileRefs.current.get(f.key)
             if (file) {
               // Use HTML preview for DOCX
-              if ((f as any)._htmlUri) {
-                dataUri = (f as any)._htmlUri
+              if (f._htmlUri) {
+                dataUri = f._htmlUri
                 fileType = "html"
               } else {
                 const buffer = await file.arrayBuffer()
@@ -188,7 +191,7 @@ export default function DocsPage() {
             }
           }
 
-          const body: any = {
+          const body: Record<string,unknown> = {
             userId: user.user.id,
             title: f.title,
             content: f.content,
@@ -206,15 +209,15 @@ export default function DocsPage() {
           const data = await resp.json()
           if (!resp.ok) throw new Error(data.error)
           saved++
-        } catch (e: any) { console.error("Save failed:", e) }
+        } catch (e: unknown) { console.error("Save failed:", e) }
       }
       setPendingFiles([])
       fileRefs.current.clear()
       setMsg(`已保存 ${saved} 个文档到知识库`)
       fetchDocuments()
       setTimeout(() => setMsg(""), 3000)
-    } catch (e: any) {
-      setMsg(`保存失败: ${e.message}`)
+    } catch (e: unknown) {
+      setMsg(`保存失败: ${e instanceof Error?e.message:"未知错误"}`)
     } finally {
       setSaving(false)
     }
@@ -244,7 +247,7 @@ export default function DocsPage() {
       setNewTitle(""); setNewContent(""); setNewTags(""); setShowAdd(false)
       setMsg("文档已添加")
       setTimeout(() => setMsg(""), 2000)
-    } catch (e: any) { setMsg(e.message) }
+    } catch (e: unknown) { setMsg(e instanceof Error?e.message:"保存失败") }
     finally { setSaving(false) }
   }
 
@@ -272,11 +275,11 @@ export default function DocsPage() {
   return (
     <AppLayout>
       <div className="space-y-6 max-w-5xl">
-        <PageHero eyebrow="Your editorial archive." title="Docs 文档知识库" description={`${documents.length} 项内容 · 当前复用文档知识库`} action={
+        <PageHero eyebrow="Your editorial archive." title="文件归档" description={`${documents.length} 项内容 · 工作用途分类`} action={<div className="flex flex-wrap gap-2"><Button asChild variant="outline" size="sm"><Link href="/knowledge"><ArrowLeft className="mr-1 h-4 w-4"/>返回知识与学习</Link></Button>
           <Button onClick={() => setShowAdd(!showAdd)} size="sm" className="gap-1.5 bg-[#c9f45a] text-[#102a21] hover:bg-[#d8ff76]">
             {showAdd ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
             {showAdd ? "取消" : "新建文档"}
-          </Button>
+          </Button></div>
         } />
 
         {/* Message */}
@@ -587,6 +590,7 @@ function FileViewer({ url, fileType, title }: { url: string; fileType?: string |
   if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"].includes(ext)) {
     return (
       <div className="rounded-lg overflow-hidden border bg-muted/20 flex items-center justify-center p-4">
+        {/* eslint-disable-next-line @next/next/no-img-element -- previews may be local data URIs unsupported by next/image */}
         <img src={url} alt={title} className="max-w-full max-h-[500px] object-contain rounded" />
       </div>
     )

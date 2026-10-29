@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, Copy, Download, FileText, Loader2, Sparkles, Trash2, Upload } from "lucide-react"
+import { ArrowLeft, CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Loader2, PenLine, Sparkles, Trash2, Upload } from "lucide-react"
+import type { LucideIcon } from "lucide-react"
 import { DeleteContentDialog } from "@/components/content/delete-content-dialog"
 
 type ReviewResult = {
@@ -44,8 +45,29 @@ type ContentDetail = {
   market: string | null
   genre: string | null
   logline: string | null
+  archived_at?: string | null
   content_files: Array<{ id: string; file_name: string; version: number; parse_status: string; extracted_text: string | null; size_bytes: number | null; created_at: string }>
   content_reviews: Array<{ id: string; reviewer_type: "ai" | "human"; status: string; score: number | null; result: ReviewResult | null; model?: string | null; is_final: boolean; created_at: string }>
+}
+
+type HumanVerdict = "审核通过" | "退修" | "不采用"
+type DevelopmentAction = "create" | "purchase" | "contract" | "revision"
+
+const TECH_STATUS_LABEL: Record<string, string> = {
+  pending: "待处理",
+  parsing: "文件解析中",
+  ready: "待审核",
+  reviewing: "AI审核中",
+  reviewed: "审核已完成",
+  developing: "审核已完成",
+  archived: "已归档",
+}
+
+const normalizeVerdict = (verdict?: string): HumanVerdict | undefined => {
+  if (verdict === "审核通过" || verdict === "推荐开发") return "审核通过"
+  if (verdict === "退修" || verdict === "修改后复审") return "退修"
+  if (verdict === "不采用" || verdict === "暂不开发") return "不采用"
+  return undefined
 }
 
 export default function ContentDetailPage() {
@@ -58,17 +80,17 @@ export default function ContentDetailPage() {
   const [reviewing, setReviewing] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState("")
-  const [humanVerdict, setHumanVerdict] = useState<"推荐开发" | "修改后复审" | "暂不开发">("修改后复审")
+  const [humanVerdict, setHumanVerdict] = useState<HumanVerdict>("退修")
   const [humanScore, setHumanScore] = useState("70")
   const [humanNotes, setHumanNotes] = useState("")
   const [savingHuman, setSavingHuman] = useState(false)
-  const [creatingProject, setCreatingProject] = useState(false)
+  const [projectAction, setProjectAction] = useState<DevelopmentAction | null>(null)
   const [copiedCodex, setCopiedCodex] = useState(false)
   const [codexResultText, setCodexResultText] = useState("")
   const [codexMode, setCodexMode] = useState("业务审核")
   const [showDelete, setShowDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const { projects, addProject } = useProjects()
+  const { projects, addProject, updateProject } = useProjects()
 
   const loadContent = useCallback(async (silent = false) => {
     if (pollingRef.current) return
@@ -186,15 +208,39 @@ export default function ContentDetailPage() {
   const canReview = files.some((file) => file.parse_status === "ready")
   const linkedProject = projects.find((project) => project.content_id === content.id)
 
-  const createProjectFromReview = async () => {
-    if (linkedProject) return
-    setCreatingProject(true)
+  const advanceToDevelopment = async (action: DevelopmentAction) => {
+    const actionConfig = {
+      create: { stage: "正式推进", progress: 10, next_action: "确认开发计划与排期", note: "责编审核通过，建立项目推进" },
+      purchase: { stage: "拟购买/合同审批", progress: 12, next_action: "确认采购意向与合同要点", note: "责编审核通过，标记为拟购买" },
+      contract: { stage: "拟购买/合同审批", progress: 15, next_action: "在飞书发起剧本采购合同审批", note: "责编审核通过，进入合同审批" },
+      revision: { stage: "剧本修改", progress: 28, next_action: "根据责编意见推进定制修改", note: "责编审核通过，进入定制修改" },
+    }[action]
+    setProjectAction(action)
+    setError("")
     try {
-      await addProject({ title: content.title, content_id: content.id, market: content.market, genre: content.genre, stage: "立项选题", progress: 0, next_action: "确认项目立项与下一步开发计划", notes: humanNotes || latestHuman?.result?.notes || "由责编审核推荐进入项目推进" })
+      if (linkedProject) {
+        await updateProject(linkedProject.id, {
+          stage: actionConfig.stage,
+          progress: Math.max(linkedProject.progress, actionConfig.progress),
+          next_action: actionConfig.next_action,
+          notes: [linkedProject.notes, actionConfig.note].filter(Boolean).join("\n"),
+        })
+      } else {
+        await addProject({
+          title: content.title,
+          content_id: content.id,
+          market: content.market,
+          genre: content.genre,
+          stage: actionConfig.stage,
+          progress: actionConfig.progress,
+          next_action: actionConfig.next_action,
+          notes: [latestHuman?.result?.notes, actionConfig.note].filter(Boolean).join("\n\n"),
+        })
+      }
     } catch (caught: unknown) {
-      setError(caught instanceof Error ? caught.message : "创建项目失败")
+      setError(caught instanceof Error ? caught.message : "推进项目失败")
     } finally {
-      setCreatingProject(false)
+      setProjectAction(null)
     }
   }
 
@@ -221,7 +267,8 @@ export default function ContentDetailPage() {
       if (start >= 0 && end > start) {
         const parsed = JSON.parse(cleaned.slice(start, end + 1)) as { overall_score?: number; score?: number; verdict?: string; notes?: string; summary?: string; priority_fixes?: string[] }
         const verdict = parsed.verdict
-        if (verdict === "推荐开发" || verdict === "修改后复审" || verdict === "暂不开发") setHumanVerdict(verdict)
+        const normalizedVerdict = normalizeVerdict(verdict)
+        if (normalizedVerdict) setHumanVerdict(normalizedVerdict)
         if (typeof parsed.overall_score === "number" || typeof parsed.score === "number") setHumanScore(String(Math.round(parsed.overall_score ?? parsed.score ?? 70)))
         const notes = [parsed.notes, parsed.summary, parsed.priority_fixes?.length ? `优先修改：\n${parsed.priority_fixes.join("\n")}` : ""].filter(Boolean).join("\n\n")
         if (notes) setHumanNotes(notes)
@@ -238,7 +285,7 @@ export default function ContentDetailPage() {
         <div className="relative overflow-hidden rounded-[2rem] bg-[#123b2d] p-6 text-[#f7f4e9] shadow-[0_24px_65px_rgba(18,59,45,.18)] sm:p-8">
           <div className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-[#c9f45a]/15 blur-3xl" />
           <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-          <div><div className="mb-3 flex gap-2"><Badge className="bg-[#c9f45a] text-[#102a21]">{content.content_type}</Badge><Badge variant="outline" className="border-white/20 text-white">{content.status}</Badge></div><h1 className="text-4xl font-medium tracking-[-.065em] sm:text-5xl">{content.title}</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-white/55">{content.logline || "尚未填写一句话梗概"}</p></div>
+          <div><div className="mb-3 flex flex-wrap gap-2"><Badge className="bg-[#c9f45a] text-[#102a21]">{content.content_type}</Badge><Badge variant="outline" className="border-white/20 text-white">处理状态 · {TECH_STATUS_LABEL[content.status] || content.status}</Badge>{latestHuman && <Badge variant="outline" className="border-white/20 text-white">责编判断 · {normalizeVerdict(latestHuman.result?.verdict) || latestHuman.result?.verdict}</Badge>}{content.status==="archived"&&content.archived_at&&<Badge variant="outline" className="border-white/20 text-white">归档于 {new Date(content.archived_at).toLocaleDateString("zh-CN")}</Badge>}</div><h1 className="text-4xl font-medium tracking-[-.065em] sm:text-5xl">{content.title}</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-white/55">{content.logline || "自动梗概待补充"}</p></div>
           <div className="flex min-w-0 flex-wrap justify-end gap-2">
             <input ref={uploadInput} type="file" accept=".docx,.pdf,.txt,.md" className="hidden" onChange={(event) => void uploadVersion(event.target.files?.[0])} />
             <Button variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white" disabled={uploading} onClick={() => uploadInput.current?.click()}>{uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}上传新版本</Button>
@@ -254,23 +301,31 @@ export default function ContentDetailPage() {
 
         <div className="grid gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-1"><CardHeader><CardTitle className="text-base">文件版本</CardTitle></CardHeader><CardContent className="space-y-3">
-            {files.length === 0 ? <p className="text-sm text-muted-foreground">尚未上传剧本</p> : files.map((file) => <div key={file.id} className="rounded-lg border p-3"><div className="flex items-start gap-2"><FileText className="mt-0.5 h-4 w-4" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{file.file_name}</p><p className="text-xs text-muted-foreground">版本 {file.version} · {file.parse_status}</p></div><Button asChild variant="ghost" size="icon"><a href={`/api/contents/files/${file.id}/download`}><Download className="h-4 w-4" /></a></Button></div></div>)}
+            {files.length === 0 ? <p className="text-sm text-muted-foreground">尚未上传剧本</p> : files.map((file) => <div key={file.id} className="rounded-lg border p-3"><div className="flex items-start gap-2"><FileText className="mt-0.5 h-4 w-4" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{file.file_name}</p><p className="text-xs text-muted-foreground">版本 {file.version} · 上传于 {new Date(file.created_at).toLocaleString("zh-CN")} · {file.parse_status}</p></div><Button asChild variant="ghost" size="icon"><a href={`/api/contents/files/${file.id}/download`}><Download className="h-4 w-4" /></a></Button></div></div>)}
           </CardContent></Card>
 
           <div className="space-y-6 lg:col-span-2">
             {result ? <ReviewView result={result} score={latestReview?.score ?? null} model={latestReview?.model} /> : activeReview ? <QueueProgress result={activeReview.result} status={activeReview.status as "pending" | "running"} /> : latestFailedReview ? <Card className="border-red-200 bg-red-50/60"><CardContent className="py-8"><div className="flex items-start gap-3 text-red-700"><Sparkles className="mt-0.5 h-5 w-5" /><div><p className="font-medium">AI 审核未完成</p><p className="mt-1 text-sm">{typeof latestFailedReview.result?.error === "string" ? latestFailedReview.result.error : "审核服务返回失败，请重新尝试。"}</p><p className="mt-3 text-xs text-red-600/80">请确认剧本文件已解析完成，然后点击上方“重新加入审核队列”。</p></div></div></CardContent></Card> : <Card className="border-dashed"><CardContent className="py-12 text-center"><Sparkles className="mx-auto mb-3 h-10 w-10 text-muted-foreground/30" /><p className="font-medium">尚无 AI 审核</p><p className="mt-1 text-sm text-muted-foreground">上传可解析的剧本后开始第一次审核。</p></CardContent></Card>}
             {reviews.length > 0 && <Card><CardHeader><CardTitle className="text-base">审核历史</CardTitle></CardHeader><CardContent className="space-y-2">{reviews.slice(0, 8).map((review) => <div key={review.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"><div><span className="font-medium">{review.reviewer_type === "ai" ? "AI审核" : "人工责编"}</span>{review.reviewer_type === "ai" && review.model && <span className="ml-2 text-xs text-muted-foreground">{formatModelName(review.model)}</span>}<span className="ml-2 text-xs text-muted-foreground">{new Date(review.created_at).toLocaleString("zh-CN")}</span></div><div className="flex items-center gap-2"><Badge variant={review.status === "completed" ? "secondary" : review.status === "failed" ? "destructive" : "outline"}>{review.status === "completed" ? "已完成" : review.status === "failed" ? "失败" : review.status === "running" ? "审核中" : "待处理"}</Badge>{review.score != null && <span className="font-semibold">{review.score}/100</span>}</div></div>)}</CardContent></Card>}
             <Card><CardHeader><CardTitle className="text-base">我的最终责编判断</CardTitle></CardHeader><CardContent className="space-y-4">
-              {latestHuman && <div className="rounded-lg border bg-muted/30 p-3"><div className="flex items-center justify-between"><Badge>{latestHuman.result?.verdict || "已判断"}</Badge><span className="font-bold">{latestHuman.score}/100</span></div><p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{latestHuman.result?.notes}</p></div>}
+              {latestHuman && <div className="rounded-lg border bg-muted/30 p-3"><div className="flex items-center justify-between"><Badge>{normalizeVerdict(latestHuman.result?.verdict) || latestHuman.result?.verdict || "已判断"}</Badge><span className="font-bold">{latestHuman.score}/100</span></div><p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{latestHuman.result?.notes}</p></div>}
               <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
-                <select value={humanVerdict} onChange={(event) => setHumanVerdict(event.target.value as typeof humanVerdict)} className="h-9 rounded-md border bg-background px-3 text-sm"><option>推荐开发</option><option>修改后复审</option><option>暂不开发</option></select>
+                <select value={humanVerdict} onChange={(event) => setHumanVerdict(event.target.value as HumanVerdict)} className="h-9 rounded-md border bg-background px-3 text-sm"><option>审核通过</option><option>退修</option><option>不采用</option></select>
                 <input type="number" min="0" max="100" value={humanScore} onChange={(event) => setHumanScore(event.target.value)} className="h-9 rounded-md border bg-background px-3 text-sm" aria-label="人工评分" />
               </div>
               <Textarea value={humanNotes} onChange={(event) => setHumanNotes(event.target.value)} rows={5} placeholder="填写你的最终判断、修改要求和是否进入开发…" />
               <div className="rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-4"><p className="mb-2 text-xs font-semibold text-primary">导入外部AI审核草稿</p><Textarea value={codexResultText} onChange={(event) => setCodexResultText(event.target.value)} rows={4} placeholder="粘贴外部AI输出的JSON或文字结果，点击导入后请人工确认。" /><Button variant="outline" size="sm" className="mt-2" onClick={importCodexResult} disabled={!codexResultText.trim()}>导入到责编判断</Button></div>
               <Button onClick={saveHumanReview} disabled={savingHuman || !humanNotes.trim()}>{savingHuman && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{latestHuman ? "更新最终判断" : "保存最终判断"}</Button>
-              {(humanVerdict === "推荐开发" || latestHuman?.result?.verdict === "推荐开发") && <Button variant="outline" onClick={() => void createProjectFromReview()} disabled={creatingProject || Boolean(linkedProject)}>{creatingProject && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{linkedProject ? "已进入项目推进" : "创建项目并推进"}</Button>}
             </CardContent></Card>
+            {normalizeVerdict(latestHuman?.result?.verdict) === "审核通过" && <Card className="overflow-hidden border-[#a9c884]/60"><CardHeader className="bg-[#f3f8ec]"><CardTitle className="flex items-center gap-2 text-base text-[#174c39]"><CheckCircle2 className="h-5 w-5" />审核通过后的推进动作</CardTitle><p className="text-sm text-muted-foreground">这些是业务动作，不会改变稿件的技术处理状态。可按实际情况选择，不要求按固定顺序执行。</p></CardHeader><CardContent className="space-y-4 pt-5">
+              {linkedProject && <div className="flex flex-col gap-2 rounded-xl border bg-muted/25 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">已关联项目：{linkedProject.title}</p><p className="text-xs text-muted-foreground">当前阶段：{linkedProject.stage} · 下一步：{linkedProject.next_action || "待补充"}</p></div><Button asChild size="sm" variant="outline"><Link href={`/projects/${linkedProject.id}`}>查看项目</Link></Button></div>}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <DevelopmentActionButton icon={FolderKanban} title="建立项目" description="正式进入项目推进并安排开发计划" loading={projectAction === "create"} disabled={Boolean(linkedProject) || Boolean(projectAction)} onClick={() => void advanceToDevelopment("create")} />
+                <DevelopmentActionButton icon={CheckCircle2} title="标记拟购买" description="记录采购意向，下一步确认合同要点" loading={projectAction === "purchase"} disabled={Boolean(projectAction)} onClick={() => void advanceToDevelopment("purchase")} />
+                <DevelopmentActionButton icon={FileSignature} title="进入合同审批" description="项目内管理合同，正式审批仍在飞书完成" loading={projectAction === "contract"} disabled={Boolean(projectAction)} onClick={() => void advanceToDevelopment("contract")} />
+                <DevelopmentActionButton icon={PenLine} title="进入定制修改" description="按责编意见推进剧本修改或定制写作" loading={projectAction === "revision"} disabled={Boolean(projectAction)} onClick={() => void advanceToDevelopment("revision")} />
+              </div>
+            </CardContent></Card>}
             {files[0]?.extracted_text && <Card><CardHeader><CardTitle className="text-base">解析正文预览</CardTitle></CardHeader><CardContent><pre className="max-h-[480px] overflow-auto whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{files[0].extracted_text}</pre></CardContent></Card>}
           </div>
         </div>
@@ -278,6 +333,13 @@ export default function ContentDetailPage() {
       <DeleteContentDialog title={content.title} open={showDelete} deleting={deleting} onCancel={() => !deleting && setShowDelete(false)} onConfirm={() => void deleteContent()} />
     </AppLayout>
   )
+}
+
+function DevelopmentActionButton({ icon: Icon, title, description, loading, disabled, onClick }: { icon: LucideIcon; title: string; description: string; loading: boolean; disabled: boolean; onClick: () => void }) {
+  return <button type="button" disabled={disabled} onClick={onClick} className="group flex min-h-24 items-start gap-3 rounded-2xl border bg-background p-4 text-left transition hover:-translate-y-0.5 hover:border-[#7da85c] hover:shadow-sm disabled:pointer-events-none disabled:opacity-50">
+    <span className="rounded-xl bg-[#eef6e5] p-2 text-[#205b43]">{loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Icon className="h-5 w-5" />}</span>
+    <span><span className="block text-sm font-semibold">{title}</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{description}</span></span>
+  </button>
 }
 
 function ReviewView({ result, score, model }: { result: ReviewResult; score: number | null; model?: string | null }) {

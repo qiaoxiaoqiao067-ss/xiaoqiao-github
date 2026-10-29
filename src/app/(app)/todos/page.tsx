@@ -17,7 +17,6 @@ import {
   Trash2,
   Loader2,
   Calendar,
-  AlertCircle,
   CheckSquare,
   ListTodo,
   Sparkles,
@@ -28,6 +27,7 @@ import {
 } from "lucide-react"
 import { RecurringManager } from "@/components/tasks/recurring-manager"
 import { AiTaskInbox } from "@/components/tasks/ai-task-inbox"
+import { DataError } from "@/components/ui/data-error"
 
 const PRIORITY_MAP: Record<number, { label: string; variant: "default" | "warning" | "destructive" }> = {
   0: { label: "P3 长期", variant: "default" },
@@ -62,7 +62,7 @@ export default function TodosPage() {
   }
 
   const activeTodos = todos.filter((t) => !t.completed && t.status !== "completed" && t.status !== "cancelled")
-  const completedTodos = todos.filter((t) => t.completed)
+  const completedTodos = todos.filter((t) => t.completed || t.status === "completed")
   const waitingTodos = activeTodos.filter((todo) => todo.status === "waiting" || todo.status === "blocked")
   const actionableTodos = activeTodos.filter((todo) => todo.status !== "waiting" && todo.status !== "blocked")
   const sortedActionable = [...actionableTodos].sort((a, b) => b.priority - a.priority || ((a.due_date || "9999").localeCompare(b.due_date || "9999")))
@@ -72,6 +72,10 @@ export default function TodosPage() {
   const todayTodos = todayPool.slice(3)
   const weekTodos = sortedActionable.filter((todo) => !todayPool.some((item) => item.id === todo.id) && (todo.priority >= 1 || todo.due_date))
   const backlogTodos = sortedActionable.filter((todo) => !nowTodos.some((item) => item.id === todo.id) && !todayTodos.some((item) => item.id === todo.id) && !weekTodos.some((item) => item.id === todo.id))
+
+  const changeTaskStatus = async (id: string, status: Todo["status"]) => {
+    await updateTodo(id, { status })
+  }
 
   return (
     <AppLayout>
@@ -93,12 +97,7 @@ export default function TodosPage() {
         )}
 
         {/* Error */}
-        {error && (
-          <div className="flex items-center gap-2 p-4 rounded-lg bg-destructive/10 text-destructive text-sm">
-            <AlertCircle className="h-4 w-4" />
-            {error}
-          </div>
-        )}
+        {error && <DataError error={error} onRetry={refetch} />}
 
         {/* Loading */}
         {loading && (
@@ -110,13 +109,13 @@ export default function TodosPage() {
         )}
 
         {!loading && <>
-          <TaskSection featured title="🔥 现在做什么" description="从今日任务中选出的最高优先级 3 件。" todos={nowTodos} onToggle={toggleTodo} onStatus={updateTodo} onEdit={updateTodo} onDelete={deleteTodo} empty="暂时没有必须立刻处理的事项。" />
+          <TaskSection featured title="🔥 现在做什么" description="从今日任务中选出的最高优先级 3 件。" todos={nowTodos} onToggle={toggleTodo} onStatus={changeTaskStatus} onEdit={updateTodo} onDelete={deleteTodo} empty="暂时没有必须立刻处理的事项。" />
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <TaskSection dense title="今日稍后" description="今日任务中除 Top 3 外的事项" todos={todayTodos} onToggle={toggleTodo} onStatus={updateTodo} onEdit={updateTodo} onDelete={deleteTodo} empty="今天没有其他任务。" />
-            <TaskSection dense title="本周推进" description="持续推进的工作" todos={weekTodos} onToggle={toggleTodo} onStatus={updateTodo} onEdit={updateTodo} onDelete={deleteTodo} empty="暂无本周事项。" />
-            <TaskSection dense title="⏳ 等待 / 跟进" description="等待条件满足" todos={waitingTodos} onToggle={toggleTodo} onStatus={updateTodo} onEdit={updateTodo} onDelete={deleteTodo} empty="暂无等待事项。" />
-            <TaskSection dense title="长期 / Backlog" description="长期建设与储备" todos={backlogTodos} onToggle={toggleTodo} onStatus={updateTodo} onEdit={updateTodo} onDelete={deleteTodo} empty="暂无长期事项。" />
+            <TaskSection dense title="今日稍后" description="今日任务中除 Top 3 外的事项" todos={todayTodos} onToggle={toggleTodo} onStatus={changeTaskStatus} onEdit={updateTodo} onDelete={deleteTodo} empty="今天没有其他任务。" />
+            <TaskSection dense title="本周推进" description="持续推进的工作" todos={weekTodos} onToggle={toggleTodo} onStatus={changeTaskStatus} onEdit={updateTodo} onDelete={deleteTodo} empty="暂无本周事项。" />
+            <TaskSection dense title="⏳ 等待 / 跟进" description="等待条件满足" todos={waitingTodos} onToggle={toggleTodo} onStatus={changeTaskStatus} onEdit={updateTodo} onDelete={deleteTodo} empty="暂无等待事项。" />
+            <TaskSection dense title="长期 / Backlog" description="长期建设与储备" todos={backlogTodos} onToggle={toggleTodo} onStatus={changeTaskStatus} onEdit={updateTodo} onDelete={deleteTodo} empty="暂无长期事项。" />
           </div>
         </>}
 
@@ -129,6 +128,7 @@ export default function TodosPage() {
                 key={todo.id}
                 todo={todo}
                 onToggle={() => toggleTodo(todo.id)}
+                onStatus={(status) => void changeTaskStatus(todo.id, status)}
                 onDelete={() => deleteTodo(todo.id)}
                 dense
               />
@@ -224,7 +224,7 @@ function TodoItem({
                 {formatDate(todo.due_date)}
               </span>
             )}
-            {onStatus && !todo.completed && <select value={todo.status || "todo"} onChange={(event) => onStatus(event.target.value as Todo["status"])} className="h-6 rounded-md border bg-background px-1.5 text-[10px] text-muted-foreground"><option value="todo">待处理</option><option value="in_progress">进行中</option><option value="waiting">等待</option><option value="blocked">受阻</option></select>}
+            {onStatus && <select value={todo.completed ? "completed" : (todo.status || "todo")} onChange={(event) => onStatus(event.target.value as Todo["status"])} className="h-6 rounded-md border bg-background px-1.5 text-[10px] text-muted-foreground"><option value="todo">待处理</option><option value="in_progress">进行中</option><option value="waiting">等待</option><option value="blocked">受阻</option><option value="completed">已完成</option></select>}
           </div>
         </div>
         {onEdit && !todo.completed && <Button variant="ghost" size="icon" aria-label={`编辑${todo.title}`} className="h-7 w-7 shrink-0 opacity-60 transition-opacity hover:opacity-100" onClick={() => setEditing((value) => !value)}><Pencil className="h-3.5 w-3.5" /></Button>}
@@ -258,6 +258,6 @@ function TodoItem({
   )
 }
 
-function TaskSection({ title, description, todos, onToggle, onStatus, onEdit, onDelete, empty, dense = false, featured = false }: { title: string; description: string; todos: Todo[]; onToggle: (id: string) => void; onStatus: (id: string, updates: { status: Todo["status"] }) => Promise<Todo>; onEdit: (id: string, updates: { title: string; description: string; priority: number; due_date: string | null; status: Todo["status"] }) => Promise<Todo>; onDelete: (id: string) => void; empty: string; dense?: boolean; featured?: boolean }) {
-  return <section className={`rounded-2xl border bg-card/80 ${dense ? "p-3" : "p-3.5"} ${featured ? "border-[#c9f45a]/70 shadow-[0_12px_30px_rgba(18,59,45,.08)]" : ""}`}><div className="mb-2 flex items-end justify-between gap-2"><div><h2 className="text-sm font-semibold">{title}</h2><p className="mt-0.5 text-[11px] text-muted-foreground">{description}</p></div><span className="text-xs font-semibold text-muted-foreground">{todos.length}</span></div><div className={dense ? "space-y-1.5" : "grid gap-2 lg:grid-cols-3"}>{todos.length ? todos.map((todo) => <TodoItem dense={dense || featured} key={todo.id} todo={todo} onToggle={() => onToggle(todo.id)} onStatus={(status) => void onStatus(todo.id, { status })} onEdit={(updates) => onEdit(todo.id, updates)} onDelete={() => onDelete(todo.id)} />) : <p className="rounded-xl border border-dashed px-3 py-3 text-xs text-muted-foreground">{empty}</p>}</div></section>
+function TaskSection({ title, description, todos, onToggle, onStatus, onEdit, onDelete, empty, dense = false, featured = false }: { title: string; description: string; todos: Todo[]; onToggle: (id: string) => void; onStatus: (id: string, status: Todo["status"]) => Promise<void>; onEdit: (id: string, updates: { title: string; description: string; priority: number; due_date: string | null; status: Todo["status"] }) => Promise<Todo>; onDelete: (id: string) => void; empty: string; dense?: boolean; featured?: boolean }) {
+  return <section className={`rounded-2xl border bg-card/80 ${dense ? "p-3" : "p-3.5"} ${featured ? "border-[#c9f45a]/70 shadow-[0_12px_30px_rgba(18,59,45,.08)]" : ""}`}><div className="mb-2 flex items-end justify-between gap-2"><div><h2 className="text-sm font-semibold">{title}</h2><p className="mt-0.5 text-[11px] text-muted-foreground">{description}</p></div><span className="text-xs font-semibold text-muted-foreground">{todos.length}</span></div><div className={dense ? "space-y-1.5" : "grid gap-2 lg:grid-cols-3"}>{todos.length ? todos.map((todo) => <TodoItem dense={dense || featured} key={todo.id} todo={todo} onToggle={() => onToggle(todo.id)} onStatus={(status) => void onStatus(todo.id, status)} onEdit={(updates) => onEdit(todo.id, updates)} onDelete={() => onDelete(todo.id)} />) : <p className="rounded-xl border border-dashed px-3 py-3 text-xs text-muted-foreground">{empty}</p>}</div></section>
 }

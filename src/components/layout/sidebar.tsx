@@ -2,10 +2,10 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import {
   LayoutDashboard,
-  CheckSquare,
   BookOpen,
   Lightbulb,
   FileSearch,
@@ -13,12 +13,9 @@ import {
   Clapperboard,
   MessagesSquare,
   BarChart3,
-  Languages,
   ChevronLeft,
   Sparkles,
   ClipboardList,
-  FolderOpen,
-  Brain,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -31,19 +28,14 @@ const NAV_ITEMS = [
     icon: LayoutDashboard,
   },
   {
+    title: "责编审稿",
+    href: "/content",
+    icon: BookOpen,
+  },
+  {
     title: "项目推进",
     href: "/projects",
     icon: Clapperboard,
-  },
-  {
-    title: "本地化交付",
-    href: "/localization",
-    icon: Languages,
-  },
-  {
-    title: "收稿审稿",
-    href: "/content",
-    icon: BookOpen,
   },
   {
     title: "市场数据看板",
@@ -56,24 +48,14 @@ const NAV_ITEMS = [
     icon: Lightbulb,
   },
   {
-    title: "调研中心",
+    title: "调研与创作",
     href: "/research",
     icon: FileSearch,
   },
   {
-    title: "会议与决策",
+    title: "会议记录",
     href: "/meetings",
     icon: MessagesSquare,
-  },
-  {
-    title: "内容知识库",
-    href: "/knowledge",
-    icon: LibraryBig,
-  },
-  {
-    title: "任务中心",
-    href: "/todos",
-    icon: CheckSquare,
   },
   {
     title: "日报周报",
@@ -81,14 +63,9 @@ const NAV_ITEMS = [
     icon: ClipboardList,
   },
   {
-    title: "文档中心",
-    href: "/docs",
-    icon: FolderOpen,
-  },
-  {
-    title: "AI 学习",
-    href: "/ai-learning",
-    icon: Brain,
+    title: "知识与学习",
+    href: "/knowledge",
+    icon: LibraryBig,
   },
 ]
 
@@ -101,6 +78,18 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: SidebarProps) {
   const pathname = usePathname()
+  const [allowedModules, setAllowedModules] = useState<string[] | null>(null)
+  const [teamRole, setTeamRole] = useState<string | null>(null)
+  useEffect(() => {
+    let active = true
+    fetch("/api/team", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).then((data) => {
+      if (!active || !data?.configured || data.role === "owner") return
+      setTeamRole(data.role || "collaborator")
+      setAllowedModules(data.status === "active" ? (data.modules || []).filter((module: { canView: boolean }) => module.canView).map((module: { key: string }) => module.key) : [])
+    }).catch(() => undefined)
+    return () => { active = false }
+  }, [])
+  const visibleNav = allowedModules === null || teamRole === "owner" ? NAV_ITEMS : NAV_ITEMS.filter((item) => item.href === "/" || (item.href === "/content" && allowedModules.includes("content")) || (item.href === "/projects" && allowedModules.includes("projects")) || (item.href === "/market-data" && allowedModules.includes("market_data")) || (item.href === "/discover" && allowedModules.includes("discover")))
 
   return (
     <aside
@@ -139,7 +128,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-        {NAV_ITEMS.map((item) => {
+        {visibleNav.map((item) => {
           const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href))
           const Icon = item.icon
 

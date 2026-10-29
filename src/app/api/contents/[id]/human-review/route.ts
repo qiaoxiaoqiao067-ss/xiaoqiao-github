@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
 
 const reviewSchema = z.object({
-  verdict: z.enum(["推荐开发", "修改后复审", "暂不开发"]),
+  verdict: z.enum(["审核通过", "退修", "不采用", "推荐开发", "修改后复审", "暂不开发"]),
   score: z.number().int().min(0).max(100),
   notes: z.string().trim().min(1).max(10000),
 })
@@ -23,6 +23,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!content) return NextResponse.json({ error: "内容项目不存在" }, { status: 404 })
 
     await serviceClient.from("content_reviews").update({ is_final: false }).eq("content_id", contentId.data).eq("user_id", user.id).eq("reviewer_type", "human")
+    const verdictMap: Record<string, "审核通过" | "退修" | "不采用"> = {
+      推荐开发: "审核通过",
+      修改后复审: "退修",
+      暂不开发: "不采用",
+    }
+    const verdict = verdictMap[input.data.verdict] || input.data.verdict
     const { data, error } = await serviceClient
       .from("content_reviews")
       .insert({
@@ -31,16 +37,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         reviewer_type: "human",
         status: "completed",
         score: input.data.score,
-        result: { verdict: input.data.verdict, notes: input.data.notes },
-        prompt_version: "human-editor-v1",
+        result: { verdict, notes: input.data.notes },
+        prompt_version: "human-editor-v2",
         is_final: true,
       })
       .select()
       .single()
     if (error) throw error
 
-    const nextStatus = input.data.verdict === "推荐开发" ? "developing" : "reviewed"
-    await serviceClient.from("contents").update({ status: nextStatus, updated_at: new Date().toISOString() }).eq("id", contentId.data).eq("user_id", user.id)
+    // `contents.status` only describes the processing lifecycle. Business
+    // decisions live in the final human review and project records.
+    await serviceClient.from("contents").update({ status: "reviewed", updated_at: new Date().toISOString() }).eq("id", contentId.data).eq("user_id", user.id)
     return NextResponse.json({ review: data })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "保存失败"

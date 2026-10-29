@@ -5,7 +5,7 @@ create table if not exists public.ideas (
   source text,
   market text,
   genre text,
-  status text not null default '灵感',
+  status text not null default '待评估',
   notes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

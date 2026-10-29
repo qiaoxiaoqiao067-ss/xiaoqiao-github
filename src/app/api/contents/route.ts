@@ -3,6 +3,7 @@ import { z } from "zod"
 import { serviceClient } from "@/lib/supabase/service"
 import { requireUser } from "@/lib/supabase/require-user"
 import { startReviewWorker } from "@/lib/reviews/review-runner"
+import { getWorkspaceDataOwnerId } from "@/lib/supabase/workspace-access"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -41,12 +42,15 @@ export async function GET(request: NextRequest) {
     const status = request.nextUrl.searchParams.get("status")
     const q = request.nextUrl.searchParams.get("q")?.trim()
 
+    const dataOwnerId = await getWorkspaceDataOwnerId(user.id)
+    if (!dataOwnerId) return NextResponse.json({ error: "账号尚未获得工作台授权" }, { status: 403 })
+
     if (id) {
       const { data, error } = await serviceClient
         .from("contents")
         .select("*, content_files(*), content_reviews(*)")
         .eq("id", id)
-        .eq("user_id", user.id)
+        .eq("user_id", dataOwnerId)
         .single()
 
       if (error) throw error
@@ -56,9 +60,12 @@ export async function GET(request: NextRequest) {
     let query = serviceClient
       .from("contents")
       .select("*, content_files(id, file_name, version, parse_status, is_primary, created_at), content_reviews(id, reviewer_type, status, score, is_final, result, created_at)")
-      .eq("user_id", user.id)
+      .eq("user_id", dataOwnerId)
       .order("updated_at", { ascending: false })
-      .limit(100)
+      // This endpoint powers both the list and its script-count metrics. The
+      // previous 100-row cap made uploads after the first 100 appear missing
+      // and caused every status total to be calculated from an incomplete set.
+      .limit(1000)
 
     if (status && contentStatuses.includes(status as (typeof contentStatuses)[number])) {
       query = query.eq("status", status)
@@ -129,6 +136,7 @@ export async function PATCH(request: NextRequest) {
     const updates = {
       ...input,
       ...(contentType !== undefined ? { content_type: contentType } : {}),
+      ...(input.status === "archived" ? { archived_at: new Date().toISOString() } : input.status !== undefined ? { archived_at: null } : {}),
       updated_at: new Date().toISOString(),
     }
     const { data, error } = await serviceClient

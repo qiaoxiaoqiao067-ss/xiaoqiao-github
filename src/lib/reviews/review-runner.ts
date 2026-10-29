@@ -69,7 +69,7 @@ export async function runQueuedReview(reviewId: string) {
   try {
     const { data: content, error: contentError } = await serviceClient
       .from("contents")
-      .select("id,title,content_type,market,language,genre")
+      .select("id,title,content_type,market,language,genre,logline")
       .eq("id", review.content_id)
       .eq("user_id", review.user_id)
       .single()
@@ -127,7 +127,7 @@ export async function runQueuedReview(reviewId: string) {
       .update({ status: "completed", score, result, model: process.env.AI_PROVIDER === "claude" ? "claude-sonnet-cli" : "codex-api", updated_at: new Date().toISOString() })
       .eq("id", reviewId)
     if (completeError) throw completeError
-    await serviceClient.from("contents").update({ status: "reviewed", updated_at: new Date().toISOString() }).eq("id", review.content_id).eq("user_id", review.user_id)
+    await serviceClient.from("contents").update({ status: "reviewed", ...(!content.logline&&result.one_line_hook?{logline:String(result.one_line_hook).slice(0,160)}:{}), updated_at: new Date().toISOString() }).eq("id", review.content_id).eq("user_id", review.user_id)
   } catch (error) {
     const previous = (review.result || {}) as ReviewResult
     await serviceClient.from("content_reviews").update({ status: "failed", result: { ...previous, error: errorMessage(error), workflow: { stage: "审核失败，可重新排队", progress: 0 } }, updated_at: new Date().toISOString() }).eq("id", reviewId)
