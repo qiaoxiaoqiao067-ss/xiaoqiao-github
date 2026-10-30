@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -26,7 +25,6 @@ export default function LoginPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [mode, setMode] = useState<"login" | "forgot">("login")
   const [pendingUploads, setPendingUploads] = useState(0)
-  const router = useRouter()
   const supabase = createClient()
 
   useEffect(() => {
@@ -50,8 +48,9 @@ export default function LoginPage() {
       if (!response.ok) throw new Error(result.error || "登录失败。")
       const requestedNext = new URLSearchParams(window.location.search).get("next")
       const next = requestedNext?.startsWith("/") && !requestedNext.startsWith("//") ? requestedNext : "/"
-      router.push(next)
-      router.refresh()
+      // 使用完整导航让刚写入的 Supabase HttpOnly cookie 立即参与中间件校验，
+      // 避免客户端路由缓存仍把用户送回登录页。
+      window.location.assign(next)
     } catch (loginError) {
       const message = loginError instanceof Error ? loginError.message : "登录失败。"
       setError(authErrorMessage(message))
