@@ -62,9 +62,19 @@ export async function proxy(request: NextRequest) {
     },
   })
 
-  const {
-    data: { user },
-  } = await getUserWithNetworkRetry(supabase)
+  // A protected route must never become an opaque browser-level load error
+  // just because Supabase is temporarily unreachable. Treat a failed session
+  // lookup as signed out and send the user to the public login screen.
+  let user = null
+  try {
+    const result = await getUserWithNetworkRetry(supabase, 3)
+    user = result.data.user
+  } catch {
+    const url = request.nextUrl.clone()
+    url.pathname = "/login"
+    url.searchParams.set("next", request.nextUrl.pathname)
+    return NextResponse.redirect(url)
+  }
 
   if (!user && isProtectedRoute) {
     const url = request.nextUrl.clone()
