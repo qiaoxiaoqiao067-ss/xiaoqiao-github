@@ -11,6 +11,10 @@ export type QueuedContentUpload = {
   error: string | null
 }
 
+function uploadFingerprint(file: { name: string; size: number; lastModified: number; type?: string }, contentType: QueuedContentUpload["contentType"]) {
+  return [contentType, file.name, file.size, file.lastModified, file.type || "application/octet-stream"].join("\u001f")
+}
+
 const DATABASE_NAME = "story-desk-upload-queue"
 const STORE_NAME = "content-uploads"
 
@@ -43,7 +47,14 @@ export async function enqueueContentFiles(
   files: File[],
   contentType: QueuedContentUpload["contentType"],
 ) {
-  const entries: QueuedContentUpload[] = files.map((file) => ({
+  const existing = await getQueuedContentUploads()
+  const fingerprints = new Set(existing.map((entry) => uploadFingerprint({ name: entry.fileName, size: entry.blob.size, lastModified: entry.lastModified, type: entry.mimeType }, entry.contentType)))
+  const entries: QueuedContentUpload[] = files.filter((file) => {
+    const fingerprint = uploadFingerprint(file, contentType)
+    if (fingerprints.has(fingerprint)) return false
+    fingerprints.add(fingerprint)
+    return true
+  }).map((file) => ({
     id: crypto.randomUUID(),
     fileName: file.name,
     mimeType: file.type,
