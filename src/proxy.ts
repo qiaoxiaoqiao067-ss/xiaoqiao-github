@@ -1,7 +1,6 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 import { getUserWithNetworkRetry } from "@/lib/supabase/get-user-with-retry"
-import { supabaseServerFetch } from "@/lib/supabase/server-fetch"
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -43,9 +42,6 @@ export async function proxy(request: NextRequest) {
   }
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    global: {
-      fetch: supabaseServerFetch,
-    },
     cookies: {
       getAll() {
         return request.cookies.getAll()
