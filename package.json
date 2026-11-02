@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "review-worker": "tsx scripts/review-worker.ts",
     "test:adx-schedule": "tsx --test tests/adx-scheduler.test.ts",
     "lint": "eslint"
   },

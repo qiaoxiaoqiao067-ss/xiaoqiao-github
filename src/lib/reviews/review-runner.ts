@@ -194,6 +194,11 @@ export async function enqueueReview(contentId: string, userId: string) {
     .single()
   if (error) throw error
   await serviceClient.from("contents").update({ status: "reviewing", updated_at: new Date().toISOString() }).eq("id", contentId).eq("user_id", userId)
-  startReviewWorker()
+  // A public Vercel request cannot use the Claude CLI installed on the
+  // editor's Mac. In Claude mode it only queues work; the trusted local
+  // worker below consumes the same Supabase queue with the logged-in CLI.
+  const waitsForLocalClaude = Boolean(process.env.VERCEL)
+    && (process.env.AI_PROVIDER || "").toLowerCase() === "claude"
+  if (!waitsForLocalClaude) startReviewWorker()
   return { ...review, alreadyQueued: false }
 }

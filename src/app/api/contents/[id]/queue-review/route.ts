@@ -24,13 +24,15 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     // Vercel may freeze a normal timer as soon as the response is sent. `after`
     // keeps the review invocation attached to the request lifecycle so the
     // public deployment actually starts the queued job.
-    if (!review.alreadyQueued) {
+    const waitsForLocalClaude = Boolean(process.env.VERCEL)
+      && (process.env.AI_PROVIDER || "").toLowerCase() === "claude"
+    if (!review.alreadyQueued && !waitsForLocalClaude) {
       after(async () => {
         const { runQueuedReview } = await import("@/lib/reviews/review-runner")
         await runQueuedReview(review.id).catch(() => undefined)
       })
     }
-    return NextResponse.json({ review, queued: true }, { status: 202 })
+    return NextResponse.json({ review, queued: true, execution: waitsForLocalClaude ? "local-claude" : "server" }, { status: 202 })
   } catch (error: unknown) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "审核入队失败" }, { status: 500 })
   }
