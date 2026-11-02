@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { requireUser } from "@/lib/supabase/require-user"
 import { ADX_PLATFORM_NAMES, closeAdxSession, recordAdxFailure, recordAdxImport, syncAdxExport, type AdxBoardType, type AdxRankType } from "@/lib/adx/local-connector"
 import { serviceClient } from "@/lib/supabase/service"
+import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
 
 export const runtime = "nodejs"
 
@@ -17,6 +18,9 @@ export async function POST(request: Request) {
   try {
     const { user, response } = await requireUser()
     if (response || !user) return response || NextResponse.json({ error: "工作台登录状态已失效，请重新登录后同步。" }, { status: 401 })
+    const access=await requireWorkspaceAccess(user.id,"market_data","edit")
+    if(!access)return NextResponse.json({error:"没有市场数据编辑权限"},{status:403})
+    const ownerId=access.ownerId
     const body = (await request.json().catch(() => ({}))) as { rankType?: string; dryRun?: boolean; boardType?: string; platform?: string; expectedPeriod?: string }
     const rankType: AdxRankType = body.rankType === "day" || body.rankType === "week" || body.rankType === "month" ? body.rankType : "week"
     const boardType: AdxBoardType = body.boardType === "short-drama" || body.boardType === "tiktok-hot" || body.boardType === "platform" ? body.boardType : "short-drama"
@@ -31,7 +35,7 @@ export async function POST(request: Request) {
       for (const platform of platforms) {
         const source = sourceName(boardType, rankType, platform)
         if (expectedPeriod && !body.dryRun) {
-          const { data: alreadyImported, error: existingError } = await serviceClient.from("market_data_imports").select("id").eq("user_id", user.id).eq("source_name", source).eq("period_label", expectedPeriod).limit(1)
+          const { data: alreadyImported, error: existingError } = await serviceClient.from("market_data_imports").select("id").eq("user_id", ownerId).eq("source_name", source).eq("period_label", expectedPeriod).limit(1)
           if (existingError) throw new Error(`检查${platform || "榜单"}已有导入失败：${existingError.message}`)
           if (alreadyImported?.length) {
             verifiedPeriod = expectedPeriod
@@ -48,7 +52,7 @@ export async function POST(request: Request) {
           completed.push({ platform, rows: result.rows.length })
           continue
         }
-        const { data: existing, error: queryError } = await serviceClient.from("market_data_imports").select("id").eq("user_id", user.id).eq("source_name", source).eq("period_label", result.period).limit(1)
+        const { data: existing, error: queryError } = await serviceClient.from("market_data_imports").select("id").eq("user_id", ownerId).eq("source_name", source).eq("period_label", result.period).limit(1)
         if (queryError) throw new Error(`检查${platform || "榜单"}已有导入失败：${queryError.message}`)
         if (existing?.length) {
           completed.push({ platform, rows: 0, id: existing[0].id, skipped: true })
@@ -58,7 +62,7 @@ export async function POST(request: Request) {
         const columns = Array.from(new Set([...result.columns, ...(platform ? ["平台"] : []), marker]))
         const rows = platform ? result.rows.map((row) => ({ ...row, 平台: platform })) : result.rows
         const { data, error: insertError } = await serviceClient.from("market_data_imports").insert({
-          user_id: user.id,
+          user_id: ownerId,
           source_name: source,
           period_label: result.period,
           file_name: result.fileName || `ADX-${platform || boardType}-${result.period}.xlsx`,

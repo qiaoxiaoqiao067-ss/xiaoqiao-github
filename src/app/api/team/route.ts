@@ -45,7 +45,7 @@ export async function GET() {
     const { data: permissions, error: permissionError } = await serviceClient.from("workspace_module_permissions").select("user_id,module_key,can_view,can_edit").eq("workspace_id", workspace.id)
     if (permissionError) throw permissionError
     const active = membership.status === "active"
-    return NextResponse.json({ configured: true, workspace, role: membership.role, status: membership.status, modules: MODULES.map((key) => ({ key, label: moduleLabel[key], canView: active && (membership.role === "owner" || Boolean((permissions || []).find((item) => item.user_id === user.id && item.module_key === key)?.can_view)), canEdit: active && membership.role === "owner" })), members: (members || []).map((member) => ({ ...member, profile: (profiles || []).find((profile) => profile.id === member.user_id) || null, permissions: (permissions || []).filter((permission) => permission.user_id === member.user_id) })) })
+    return NextResponse.json({ configured: true, workspace, role: membership.role, status: membership.status, modules: MODULES.map((key) => { const permission = (permissions || []).find((item) => item.user_id === user.id && item.module_key === key); return { key, label: moduleLabel[key], canView: active && (membership.role === "owner" || Boolean(permission?.can_view)), canEdit: active && (membership.role === "owner" || (membership.role === "collaborator" && Boolean(permission?.can_edit))) } }), members: (members || []).map((member) => ({ ...member, profile: (profiles || []).find((profile) => profile.id === member.user_id) || null, permissions: (permissions || []).filter((permission) => permission.user_id === member.user_id) })) })
   } catch (error) {
     const detail = error instanceof Error
       ? error.message
@@ -68,18 +68,18 @@ export async function POST(request: NextRequest) {
     // 先查找已注册账号。已注册成员不再重复发邀请邮件，直接授予工作台权限。
     const { data: existing, error: listError } = await serviceClient.auth.admin.listUsers({ page: 1, perPage: 1000 })
     if (listError) throw listError
-    let invitedUserId = existing.users.find((candidate) => candidate.email?.toLowerCase() === email)?.id
-    let inviteSent = false
+    const invitedUserId = existing.users.find((candidate) => candidate.email?.toLowerCase() === email)?.id
+    const inviteSent = false
 
     if (!invitedUserId) {
       return NextResponse.json({ error: "该邮箱尚未注册。请让对方先在工作台注册，注册后你再回来点击“授权访问”。" }, { status: 400 })
     }
     if (!invitedUserId) return NextResponse.json({ error: "邀请已发送，但暂时无法取得成员账号，请稍后刷新" }, { status: 202 })
-    // 只有管理员在后台点“授权”后才可进入；团队成员统一只读。
-    const { error: memberError } = await serviceClient.from("workspace_members").upsert({ workspace_id: workspace.id, user_id: invitedUserId, role: "viewer", status: "active", invited_email: email, updated_at: new Date().toISOString() }, { onConflict: "workspace_id,user_id" })
+    const role = parsed.data.role
+    const { error: memberError } = await serviceClient.from("workspace_members").upsert({ workspace_id: workspace.id, user_id: invitedUserId, role, status: "active", invited_email: email, updated_at: new Date().toISOString() }, { onConflict: "workspace_id,user_id" })
     if (memberError) throw memberError
     await serviceClient.from("workspace_module_permissions").delete().eq("workspace_id", workspace.id).eq("user_id", invitedUserId)
-    const { error: permissionError } = await serviceClient.from("workspace_module_permissions").insert(parsed.data.modules.map((module_key) => ({ workspace_id: workspace.id, user_id: invitedUserId, module_key, can_view: true, can_edit: false })))
+    const { error: permissionError } = await serviceClient.from("workspace_module_permissions").insert(parsed.data.modules.map((module_key) => ({ workspace_id: workspace.id, user_id: invitedUserId, module_key, can_view: true, can_edit: role === "collaborator" })))
     if (permissionError) throw permissionError
     return NextResponse.json({ ok: true, email, inviteSent, modules: parsed.data.modules.map((key) => moduleLabel[key]) })
   } catch (error) {
@@ -121,7 +121,7 @@ export async function PATCH(request: NextRequest) {
     if (!workspace) return NextResponse.json({ error: "只有团队所有者可以修改成员状态" }, { status: 403 })
     const body = await request.json().catch(() => null)
     const userId = typeof body?.user_id === "string" ? body.user_id : ""
-    const status = body?.status === "active" || body?.status === "suspended" ? body.status : ""
+    const status = body?.status === "active" || body?.status === "disabled" ? body.status : ""
     if (!userId || !status) return NextResponse.json({ error: "缺少成员或状态" }, { status: 400 })
     if (userId === user.id) return NextResponse.json({ error: "不能关闭团队所有者" }, { status: 400 })
     const { error } = await serviceClient.from("workspace_members").update({ status, updated_at: new Date().toISOString() }).eq("workspace_id", workspace.id).eq("user_id", userId)

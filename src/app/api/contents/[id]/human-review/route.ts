@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
+import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
 
 const reviewSchema = z.object({
   verdict: z.enum(["审核通过", "退修", "不采用", "推荐开发", "修改后复审", "暂不开发"]),
@@ -13,16 +14,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   try {
     const { user, response } = await requireUser()
     if (response) return response
+    const access = await requireWorkspaceAccess(user.id, "content", "edit")
+    if (!access) return NextResponse.json({ error: "没有责编审稿编辑权限" }, { status: 403 })
+    const ownerId = access.ownerId
 
     const contentId = z.string().uuid().safeParse((await context.params).id)
     if (!contentId.success) return NextResponse.json({ error: "Invalid content id" }, { status: 400 })
     const input = reviewSchema.safeParse(await request.json())
     if (!input.success) return NextResponse.json({ error: "请完整填写人工结论、评分和意见" }, { status: 400 })
 
-    const { data: content } = await serviceClient.from("contents").select("id").eq("id", contentId.data).eq("user_id", user.id).maybeSingle()
+    const { data: content } = await serviceClient.from("contents").select("id").eq("id", contentId.data).eq("user_id", ownerId).maybeSingle()
     if (!content) return NextResponse.json({ error: "内容项目不存在" }, { status: 404 })
 
-    await serviceClient.from("content_reviews").update({ is_final: false }).eq("content_id", contentId.data).eq("user_id", user.id).eq("reviewer_type", "human")
+    await serviceClient.from("content_reviews").update({ is_final: false }).eq("content_id", contentId.data).eq("user_id", ownerId).eq("reviewer_type", "human")
     const verdictMap: Record<string, "审核通过" | "退修" | "不采用"> = {
       推荐开发: "审核通过",
       修改后复审: "退修",
@@ -33,7 +37,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       .from("content_reviews")
       .insert({
         content_id: contentId.data,
-        user_id: user.id,
+        user_id: ownerId,
         reviewer_type: "human",
         status: "completed",
         score: input.data.score,
@@ -47,7 +51,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     // `contents.status` only describes the processing lifecycle. Business
     // decisions live in the final human review and project records.
-    await serviceClient.from("contents").update({ status: "reviewed", updated_at: new Date().toISOString() }).eq("id", contentId.data).eq("user_id", user.id)
+    await serviceClient.from("contents").update({ status: "reviewed", updated_at: new Date().toISOString() }).eq("id", contentId.data).eq("user_id", ownerId)
     return NextResponse.json({ review: data })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "保存失败"

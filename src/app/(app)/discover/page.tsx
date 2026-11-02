@@ -53,4 +53,5 @@ function IdeaCard({idea,researching,hasResearch,meetingBusy,hasMeeting,projectBu
 function Signal({icon:Icon,title,text,href}:{icon:React.ElementType;title:string;text:string;href:string}){return <Card className="bg-secondary/45"><CardContent className="p-5"><Icon className="h-5 w-5 text-primary"/><p className="mt-4 font-semibold">{title}</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{text}</p><a href={href} className="mt-3 inline-block text-xs font-semibold text-primary">进入查看 →</a></CardContent></Card>}
 function PreviewStat({label,value}:{label:string;value:number}){return <div className="rounded-xl bg-secondary/55 p-3"><p className="text-xl font-semibold text-primary">{value}</p><p className="text-xs text-muted-foreground">{label}</p></div>}
 
+void LegacyDiscoverPage
 export { default } from "./discover-list-page"

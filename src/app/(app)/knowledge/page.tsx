@@ -39,6 +39,7 @@ export default function KnowledgePage() {
   const [batchFiles,setBatchFiles]=useState<BatchKnowledgeFile[]>([])
   const [batchSaving,setBatchSaving]=useState(false)
   const [message,setMessage]=useState("")
+  void message
   const [genreFilter,setGenreFilter]=useState("全部")
   const [search,setSearch]=useState("")
   const [form, setForm] = useState({ title: "", item_type: "责编经验", category: "", content: "", source_url: "", primary_genre:"其他待归类",genre_tags:[] as string[],logline:"",relationships:"" })

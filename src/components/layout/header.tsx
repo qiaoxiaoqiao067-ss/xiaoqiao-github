@@ -16,7 +16,9 @@ import { Badge } from "@/components/ui/badge"
 import { getGreeting, isWorkday } from "@/lib/utils"
 import { Sun, Moon, LogOut, User, Bell, Menu } from "lucide-react"
 import { useTheme } from "next-themes"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useSyncExternalStore } from "react"
+
+const subscribeToHydration = () => () => undefined
 
 export function Header({ onMenuClick }: { onMenuClick: () => void }) {
   const router = useRouter()
@@ -25,6 +27,7 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
   const [mounted, setMounted] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
   const [isOwner, setIsOwner] = useState(false)
+  const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false)
 
   useEffect(() => {
     // Client-only theme controls render after hydration.
@@ -46,9 +49,8 @@ export function Header({ onMenuClick }: { onMenuClick: () => void }) {
     router.refresh()
   }
 
-  const greeting = getGreeting()
-  const today = new Date()
-  const isTodayWorkday = isWorkday(today)
+  const greeting = hydrated ? getGreeting() : "你好"
+  const isTodayWorkday = hydrated ? isWorkday(new Date()) : true
 
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-border/60 bg-card/85 px-4 backdrop-blur-xl sm:px-6">

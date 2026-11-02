@@ -2,15 +2,18 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
+import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { user, response } = await requireUser()
   if (response) return response
+  const access = await requireWorkspaceAccess(user.id, "content", "view")
+  if (!access) return NextResponse.json({ error: "没有责编审稿查看权限" }, { status: 403 })
 
   const parsed = z.string().uuid().safeParse((await context.params).id)
   if (!parsed.success) return NextResponse.json({ error: "Invalid file id" }, { status: 400 })
 
-  const { data: file, error } = await serviceClient.from("content_files").select("storage_path").eq("id", parsed.data).eq("user_id", user.id).single()
+  const { data: file, error } = await serviceClient.from("content_files").select("storage_path").eq("id", parsed.data).eq("user_id", access.ownerId).single()
   if (error || !file) return NextResponse.json({ error: "File not found" }, { status: 404 })
 
   const { data, error: signedError } = await serviceClient.storage.from("content-files").createSignedUrl(file.storage_path, 60)

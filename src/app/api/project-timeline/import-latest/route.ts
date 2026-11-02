@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 import * as XLSX from "xlsx"
 import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
-import { getWorkspaceDataOwnerId } from "@/lib/supabase/workspace-access"
+import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
 
 export const dynamic = "force-dynamic"
 const SOURCE_FILE = "/Users/xiaoqiao/Downloads/短剧内容部和制作部排期表_2026-1026_分部门版.xlsx"
@@ -47,9 +47,9 @@ function sameProject(projectTitle: string, source: string) { const a = normalize
 export async function POST() {
   const { user, response } = await requireUser()
   if (response) return response
-  const ownerId = await getWorkspaceDataOwnerId(user.id)
-  if (!ownerId) return NextResponse.json({ error: "账号尚未获得工作台授权" }, { status: 403 })
-  if (ownerId !== user.id) return NextResponse.json({ error: "只有工作台所有者可以导入最新排期" }, { status: 403 })
+  const access = await requireWorkspaceAccess(user.id, "projects", "edit")
+  if (!access) return NextResponse.json({ error: "没有项目推进编辑权限" }, { status: 403 })
+  const ownerId = access.ownerId
   if (!fs.existsSync(SOURCE_FILE)) return NextResponse.json({ error: "未找到 10/26 最新排期文件" }, { status: 404 })
   const { data: projects, error: projectError } = await serviceClient.from("projects").select("id,title").eq("user_id", ownerId)
   if (projectError) return NextResponse.json({ error: projectError.message }, { status: 500 })

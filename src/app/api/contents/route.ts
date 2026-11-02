@@ -3,7 +3,7 @@ import { z } from "zod"
 import { serviceClient } from "@/lib/supabase/service"
 import { requireUser } from "@/lib/supabase/require-user"
 import { startReviewWorker } from "@/lib/reviews/review-runner"
-import { getWorkspaceDataOwnerId } from "@/lib/supabase/workspace-access"
+import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -42,8 +42,9 @@ export async function GET(request: NextRequest) {
     const status = request.nextUrl.searchParams.get("status")
     const q = request.nextUrl.searchParams.get("q")?.trim()
 
-    const dataOwnerId = await getWorkspaceDataOwnerId(user.id)
-    if (!dataOwnerId) return NextResponse.json({ error: "账号尚未获得工作台授权" }, { status: 403 })
+    const access = await requireWorkspaceAccess(user.id, "content", "view")
+    if (!access) return NextResponse.json({ error: "没有责编审稿查看权限" }, { status: 403 })
+    const dataOwnerId = access.ownerId
 
     if (id) {
       const { data, error } = await serviceClient
@@ -90,6 +91,8 @@ export async function POST(request: NextRequest) {
   try {
     const { user, response } = await requireUser()
     if (response) return response
+    const access = await requireWorkspaceAccess(user.id, "content", "edit")
+    if (!access) return NextResponse.json({ error: "没有责编审稿编辑权限" }, { status: 403 })
 
     const parsed = createContentSchema.safeParse(await request.json())
     if (!parsed.success) {
@@ -100,7 +103,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await serviceClient
       .from("contents")
       .insert({
-        user_id: user.id,
+        user_id: access.ownerId,
         title: input.title,
         content_type: input.contentType,
         status: input.status,
@@ -126,6 +129,8 @@ export async function PATCH(request: NextRequest) {
   try {
     const { user, response } = await requireUser()
     if (response) return response
+    const access = await requireWorkspaceAccess(user.id, "content", "edit")
+    if (!access) return NextResponse.json({ error: "没有责编审稿编辑权限" }, { status: 403 })
 
     const parsed = updateContentSchema.safeParse(await request.json())
     if (!parsed.success) {
@@ -143,7 +148,7 @@ export async function PATCH(request: NextRequest) {
       .from("contents")
       .update(updates)
       .eq("id", id)
-      .eq("user_id", user.id)
+      .eq("user_id", access.ownerId)
       .select()
       .single()
 
@@ -158,6 +163,8 @@ export async function DELETE(request: NextRequest) {
   try {
     const { user, response } = await requireUser()
     if (response) return response
+    const access = await requireWorkspaceAccess(user.id, "content", "edit")
+    if (!access) return NextResponse.json({ error: "没有责编审稿编辑权限" }, { status: 403 })
 
     const id = request.nextUrl.searchParams.get("id")
     if (!id || !z.string().uuid().safeParse(id).success) {
@@ -168,7 +175,7 @@ export async function DELETE(request: NextRequest) {
       .from("content_files")
       .select("storage_path")
       .eq("content_id", id)
-      .eq("user_id", user.id)
+      .eq("user_id", access.ownerId)
 
     if (filesError) throw filesError
     const paths = (files || []).map((file) => file.storage_path).filter(Boolean)
@@ -181,7 +188,7 @@ export async function DELETE(request: NextRequest) {
       .from("contents")
       .delete()
       .eq("id", id)
-      .eq("user_id", user.id)
+      .eq("user_id", access.ownerId)
 
     if (error) throw error
     return NextResponse.json({ success: true })

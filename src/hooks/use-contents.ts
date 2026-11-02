@@ -48,14 +48,14 @@ class RequestError extends Error {
 async function request(path: string, options?: RequestInit) {
   const response = await fetch(path, { cache: "no-store", ...options })
   const raw = await response.text()
-  let data: Record<string, any> = {}
+  let data: Record<string, unknown> = {}
   try { data = raw ? JSON.parse(raw) : {} } catch {
     const isHtml = /^\s*<!doctype html|^\s*<html/i.test(raw)
     data = { error: isHtml
       ? `服务器返回了错误页面（HTTP ${response.status}）。请检查公网 AI 服务配置或部署日志。`
       : raw.slice(0, 300) || "服务器未返回有效结果" }
   }
-  if (!response.ok) throw new RequestError(data.error || "Request failed", response.status)
+  if (!response.ok) throw new RequestError(typeof data.error === "string" ? data.error : "Request failed", response.status)
   return data
 }
 
@@ -121,7 +121,7 @@ export function useContents() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
-    })
+    }) as { content: ContentItem }
     setContents((current) => [{ ...data.content, content_files: [], content_reviews: [] }, ...current])
     return data.content as ContentItem
   }, [])

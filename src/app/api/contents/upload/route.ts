@@ -4,6 +4,7 @@ import { NextResponse } from "next/server"
 import mammoth from "mammoth"
 import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
+import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
 
 export const runtime = "nodejs"
 export const maxDuration = 300
@@ -106,6 +107,9 @@ export async function POST(request: Request) {
   try {
     const { user, response } = await requireUser()
     if (response) return response
+    const access = await requireWorkspaceAccess(user.id, "content", "edit")
+    if (!access) return NextResponse.json({ error: "没有责编审稿编辑权限" }, { status: 403 })
+    const ownerId = access.ownerId
 
     const form = await request.formData()
     const file = form.get("file")
@@ -138,7 +142,7 @@ export async function POST(request: Request) {
         .from("contents")
         .select("id")
         .eq("id", contentId)
-        .eq("user_id", user.id)
+        .eq("user_id", ownerId)
         .single()
       if (error || !data) return NextResponse.json({ error: "内容项目不存在" }, { status: 404 })
     } else {
@@ -146,7 +150,7 @@ export async function POST(request: Request) {
       const { data: candidates, error: duplicateLookupError } = await serviceClient
         .from("contents")
         .select("id,title")
-        .eq("user_id", user.id)
+        .eq("user_id", ownerId)
         .eq("content_type", safeType)
         .order("updated_at", { ascending: false })
         .limit(1000)
@@ -159,7 +163,7 @@ export async function POST(request: Request) {
       } else {
         const { data, error } = await serviceClient
           .from("contents")
-          .insert({ user_id: user.id, title: titleFromFile(file.name), content_type: safeType, status: "parsing" })
+          .insert({ user_id: ownerId, title: titleFromFile(file.name), content_type: safeType, status: "parsing" })
           .select("id")
           .single()
         if (error) throw error
@@ -172,7 +176,7 @@ export async function POST(request: Request) {
       const { data: completedUpload, error: completedUploadError } = await serviceClient
         .from("content_files")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", ownerId)
         .eq("content_id", contentId)
         .like("storage_path", `%/${uploadId}-%`)
         .maybeSingle()
@@ -186,14 +190,14 @@ export async function POST(request: Request) {
       .from("content_files")
       .select("version")
       .eq("content_id", contentId)
-      .eq("user_id", user.id)
+      .eq("user_id", ownerId)
       .order("version", { ascending: false })
       .limit(1)
       .maybeSingle()
     if (versionError) throw versionError
     const version = (latestFile?.version || 0) + 1
 
-    storagePath = `${user.id}/${contentId}/${uploadId || randomUUID()}-${safeFileName(file.name)}`
+    storagePath = `${ownerId}/${contentId}/${uploadId || randomUUID()}-${safeFileName(file.name)}`
     const bytes = Buffer.from(await file.arrayBuffer())
     const { error: uploadError } = await serviceClient.storage
       .from("content-files")
@@ -205,7 +209,7 @@ export async function POST(request: Request) {
       .from("content_files")
       .insert({
         content_id: contentId,
-        user_id: user.id,
+        user_id: ownerId,
         file_name: file.name,
         storage_path: storagePath,
         mime_type: file.type || null,
@@ -229,7 +233,7 @@ export async function POST(request: Request) {
       .from("contents")
       .update({ status: contentStatus, ...(logline?{logline}:{}), updated_at: new Date().toISOString() })
       .eq("id", contentId)
-      .eq("user_id", user.id)
+      .eq("user_id", ownerId)
     if (statusError) throw statusError
 
     return NextResponse.json({ contentId, file: fileRecord, created: Boolean(createdContentId), updatedVersion: matchedExisting }, { status: 201 })

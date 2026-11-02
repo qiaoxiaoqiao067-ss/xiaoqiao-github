@@ -1,7 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { createClient } from "@/lib/supabase/client"
+import { useCallback, useEffect, useState } from "react"
 
 export const PROJECT_STAGES = ["拟购买/合同审批", "正式推进", "剧本修改", "剧本定稿", "双语稿确认", "围读", "制作交接", "完成归档"] as const
 const LEGACY_PROJECT_STAGE_MAP: Record<string, (typeof PROJECT_STAGES)[number]> = {
@@ -28,7 +27,6 @@ export type ProjectInput = Pick<Project, "title"> & Partial<Pick<Project, "marke
 const normalizeProject = (project: Project): Project => ({ ...project, stage: LEGACY_PROJECT_STAGE_MAP[project.stage] || project.stage })
 
 export function useProjects() {
-  const supabase = useMemo(() => createClient(), [])
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -40,32 +38,26 @@ export function useProjects() {
     if (!response.ok) setError(payload.error || "项目读取失败")
     else setProjects(((payload.projects || []) as Project[]).map(normalizeProject))
     setLoading(false)
-  }, [supabase])
+  }, [])
 
   const addProject = useCallback(async (input: ProjectInput) => {
-    const { data: auth } = await supabase.auth.getUser()
-    if (!auth.user) throw new Error("请先登录")
-    const nextNo=Math.max(0,...projects.map((item)=>Number(item.project_no||0)))+1
-    const { data, error: insertError } = await supabase.from("projects").insert({ ...input, project_no:nextNo, user_id: auth.user.id }).select().single()
-    if (insertError) throw insertError
-    const project = normalizeProject(data as Project)
+    const response = await fetch("/api/projects", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(input) }); const payload=await response.json(); if(!response.ok) throw new Error(payload.error||"项目创建失败")
+    const project = normalizeProject(payload.project as Project)
     setProjects((current) => [project, ...current])
     return project
-  }, [projects,supabase])
+  }, [])
 
   const updateProject = useCallback(async (id: string, updates: Partial<ProjectInput>) => {
-    const { data, error: updateError } = await supabase.from("projects").update({ ...updates, updated_at: new Date().toISOString() }).eq("id", id).select().single()
-    if (updateError) throw updateError
-    const project = normalizeProject(data as Project)
+    const response=await fetch("/api/projects",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,...updates})});const payload=await response.json();if(!response.ok)throw new Error(payload.error||"项目更新失败")
+    const project = normalizeProject(payload.project as Project)
     setProjects((current) => current.map((item) => item.id === id ? project : item))
     return project
-  }, [supabase])
+  }, [])
 
   const deleteProject = useCallback(async (id: string) => {
-    const { error: deleteError } = await supabase.from("projects").delete().eq("id", id)
-    if (deleteError) throw deleteError
+    const response=await fetch(`/api/projects?id=${encodeURIComponent(id)}`,{method:"DELETE"});const payload=await response.json();if(!response.ok)throw new Error(payload.error||"项目删除失败")
     setProjects((current) => current.filter((project) => project.id !== id))
-  }, [supabase])
+  }, [])
 
   useEffect(() => {
     // Initial remote data synchronization.

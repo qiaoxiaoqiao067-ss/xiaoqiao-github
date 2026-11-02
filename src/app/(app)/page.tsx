@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { AppLayout } from "@/components/layout/app-layout"
 import { useTodos } from "@/hooks/use-todos"
@@ -23,7 +23,15 @@ export default function DashboardPage() {
   const [weekOffset, setWeekOffset] = useState(0)
   const [calendarView, setCalendarView] = useState<"week"|"month">("week")
   const [monthOffset, setMonthOffset] = useState(0)
-  const [attentionStates, setAttentionStates] = useState<Record<string, { status: AttentionStatus; signature: string }>>(()=>{if(typeof window==="undefined")return {};try{return JSON.parse(window.localStorage.getItem("dashboard-attention-states")||"{}") as Record<string,{status:AttentionStatus;signature:string}>}catch{return {}}})
+  const [attentionStates, setAttentionStates] = useState<Record<string, { status: AttentionStatus; signature: string }>>({})
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(window.localStorage.getItem("dashboard-attention-states") || "{}") as Record<string, { status: AttentionStatus; signature: string }>
+      // Restore local display preferences only after the server markup hydrates.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAttentionStates(stored)
+    } catch { /* Ignore an invalid local preference payload. */ }
+  }, [])
   const { todos, loading: todosLoading, toggleTodo, updateTodo, refetch: refetchTodos } = useTodos()
   const { contents, loading: contentsLoading } = useContents()
   const { habits, completedIds, loading: habitsLoading, toggleToday } = useHabits()

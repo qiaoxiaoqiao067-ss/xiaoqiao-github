@@ -1,8 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { createClient } from "@/lib/supabase/client"
-import { getUserWithNetworkRetry } from "@/lib/supabase/get-user-with-retry"
+import { useCallback, useEffect, useState } from "react"
 
 export type MarketDataImport = {
   id: string; user_id: string; source_name: string; period_label: string | null; file_name: string
@@ -24,7 +22,6 @@ function friendlyDataError(error: unknown) {
 }
 
 export function useMarketDataImports() {
-  const supabase = useMemo(() => createClient(), [])
   const [imports, setImports] = useState<MarketDataImport[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -50,25 +47,14 @@ export function useMarketDataImports() {
     } finally {
       setLoading(false)
     }
-  }, [supabase])
+  }, [])
   const addImport = useCallback(async (input: MarketDataImportInput) => {
-    let auth
-    try {
-      const result = await getUserWithNetworkRetry(supabase, 3)
-      auth = result.data
-    } catch (caught) {
-      throw new Error(friendlyDataError(caught))
-    }
-    if (!auth.user) throw new Error("登录状态已失效，请重新登录后上传")
-    const { data, error: insertError } = await supabase.from("market_data_imports").insert({ ...input, user_id: auth.user.id }).select().single()
-    if (insertError) throw new Error(friendlyDataError(insertError))
-    setImports((current) => [data as MarketDataImport, ...current]); return data as MarketDataImport
-  }, [supabase])
+    const response=await fetch("/api/market-data/imports",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(input)});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(friendlyDataError(payload.error||"市场数据写入失败"));setImports((current)=>[payload.import as MarketDataImport,...current]);return payload.import as MarketDataImport
+  }, [])
   const deleteImport = useCallback(async (id: string) => {
-    const { error: deleteError } = await supabase.from("market_data_imports").delete().eq("id", id)
-    if (deleteError) throw deleteError
+    const response=await fetch(`/api/market-data/imports?id=${encodeURIComponent(id)}`,{method:"DELETE"});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||"市场数据删除失败")
     setImports((current) => current.filter((item) => item.id !== id))
-  }, [supabase])
+  }, [])
   useEffect(() => {
     // Initial remote data synchronization.
     // eslint-disable-next-line react-hooks/set-state-in-effect

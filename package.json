@@ -8,6 +8,7 @@
     "start": "next start",
     "review-worker": "tsx scripts/review-worker.ts",
     "test:adx-schedule": "tsx --test tests/adx-scheduler.test.ts",
+    "test:workspace-access": "tsx --test tests/workspace-access.test.ts",
     "lint": "eslint"
   },
   "dependencies": {
