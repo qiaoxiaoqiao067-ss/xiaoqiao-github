@@ -2,22 +2,15 @@ import { randomUUID } from "crypto"
 import { join } from "node:path"
 import { NextResponse } from "next/server"
 import mammoth from "mammoth"
-import { PDFParse } from "pdf-parse"
 import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
+
+export const runtime = "nodejs"
+export const maxDuration = 300
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024
 const ALLOWED_EXTENSIONS = new Set(["docx", "pdf", "txt", "md"])
 let pdfWorkerConfigured = false
-
-function configurePdfWorker() {
-  if (pdfWorkerConfigured) return
-  // Next's development bundler relocates the PDF parser module. Give pdf.js an
-  // explicit node_modules worker path so server-side PDF extraction does not
-  // look for a non-existent worker inside `.next/server/chunks`.
-  PDFParse.setWorker(join(process.cwd(), "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"))
-  pdfWorkerConfigured = true
-}
 
 function getExtension(name: string) {
   return name.split(".").pop()?.toLowerCase() || ""
@@ -75,7 +68,16 @@ async function extractText(file: File, extension: string) {
     }
   }
   if (extension === "pdf") {
-    configurePdfWorker()
+    // Load the PDF parser only for PDF uploads. Keeping it out of the module
+    // top-level prevents its worker/runtime dependencies from crashing DOCX
+    // uploads on Vercel's Node runtime.
+    const { PDFParse } = await import("pdf-parse")
+    if (!pdfWorkerConfigured) {
+      // Next's bundler relocates server chunks. Configure the worker only after
+      // pdf-parse has been loaded so DOCX/TXT uploads never initialize pdf.js.
+      PDFParse.setWorker(join(process.cwd(), "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"))
+      pdfWorkerConfigured = true
+    }
     const parser = new PDFParse({ data: new Uint8Array(await file.arrayBuffer()) })
     try {
       const result = await parser.getText()
