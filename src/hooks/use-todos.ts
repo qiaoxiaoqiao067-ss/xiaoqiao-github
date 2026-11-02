@@ -66,9 +66,12 @@ function tagValue(tags: string[] | null | undefined, key: string) {
 function normalizeTodo(row: Record<string, unknown>): Todo {
   const tags = Array.isArray(row.tags) ? row.tags.filter((item): item is string => typeof item === "string") : []
   const status = (row.status || tagValue(tags, "status") || (row.completed ? "completed" : "todo")) as Todo["status"]
+  const rawDueDate = typeof row.due_date === "string" ? row.due_date : null
+  const dueDate = rawDueDate && Number.isFinite(new Date(rawDueDate).getTime()) ? rawDueDate : null
   return {
     ...row,
     tags,
+    due_date: dueDate,
     status,
     completed: Boolean(row.completed || status === "completed"),
     category: String(row.category || tagValue(tags, "category") || "") || null,

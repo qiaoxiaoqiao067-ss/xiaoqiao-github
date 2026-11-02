@@ -6,12 +6,14 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatDate(date: string | Date, options?: Intl.DateTimeFormatOptions) {
+  const value = date instanceof Date ? date : new Date(date)
+  if (Number.isNaN(value.getTime())) return "日期异常"
   return new Intl.DateTimeFormat("zh-CN", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
     ...options,
-  }).format(new Date(date))
+  }).format(value)
 }
 
 export function isWorkday(date: Date = new Date()) {
