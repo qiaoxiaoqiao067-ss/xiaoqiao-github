@@ -1,8 +1,10 @@
-import { NextResponse } from "next/server"
+import { after, NextResponse } from "next/server"
 import { z } from "zod"
 import { enqueueReview } from "@/lib/reviews/review-runner"
 import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
+
+export const maxDuration = 300
 
 export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
@@ -19,6 +21,15 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     if (!file) return NextResponse.json({ error: "剧本尚未完成文本解析" }, { status: 409 })
 
     const review = await enqueueReview(contentId, user.id)
+    // Vercel may freeze a normal timer as soon as the response is sent. `after`
+    // keeps the review invocation attached to the request lifecycle so the
+    // public deployment actually starts the queued job.
+    if (!review.alreadyQueued) {
+      after(async () => {
+        const { runQueuedReview } = await import("@/lib/reviews/review-runner")
+        await runQueuedReview(review.id).catch(() => undefined)
+      })
+    }
     return NextResponse.json({ review, queued: true }, { status: 202 })
   } catch (error: unknown) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "审核入队失败" }, { status: 500 })

@@ -66,7 +66,11 @@ function runClaude(prompt: string, timeout: number) {
 
 /** Shared AI runner. Claude CLI is the reliable local fallback; HTTP remains available for Codex/OpenRouter. */
 export async function runCodex(prompt: string, timeout = 120000) {
-  if ((process.env.AI_PROVIDER || "").toLowerCase() === "claude") {
+  // Claude Code is a local executable. It is intentionally never spawned on
+  // Vercel/serverless, where the binary does not exist and child processes are
+  // not a durable job runner. Public deployments use the configured HTTP
+  // provider instead (OpenAI/OpenRouter/compatible endpoint).
+  if ((process.env.AI_PROVIDER || "").toLowerCase() === "claude" && !process.env.VERCEL) {
     return runClaude(prompt, timeout)
   }
 

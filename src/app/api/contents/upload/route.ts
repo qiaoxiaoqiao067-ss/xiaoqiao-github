@@ -5,7 +5,6 @@ import mammoth from "mammoth"
 import { PDFParse } from "pdf-parse"
 import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
-import { runCodex } from "@/lib/ai/codex"
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024
 const ALLOWED_EXTENSIONS = new Set(["docx", "pdf", "txt", "md"])
@@ -96,14 +95,6 @@ function explicitLogline(text:string){
   const normalized=text.replace(/\r/g,"")
   const match=normalized.match(/(?:一句话(?:梗概|钩子|高概念)|高概念|故事简介|剧情梗概)\s*[：:]\s*([^\n]{8,240})/i)
   return match?.[1]?.trim().replace(/\s+/g," ").slice(0,160)||""
-}
-
-async function inferLogline(text:string){
-  const explicit=explicitLogline(text);if(explicit)return explicit
-  try{
-    const result=await runCodex(`只依据下面剧本文本提炼一句客观、可核查的剧情梗概。中文不超过80个字，英文不超过160个字符；写清主角、核心处境和主要冲突，不添加原文没有的信息。只返回梗概正文。\n\n${text.slice(0,50000)}`,45000)
-    return result.replace(/^['“”\s]+|['“”\s]+$/g,"").replace(/\s+/g," ").slice(0,160)
-  }catch{return ""}
 }
 
 export async function POST(request: Request) {
@@ -228,7 +219,10 @@ export async function POST(request: Request) {
     if (recordError) throw recordError
 
     const contentStatus = extracted.status === "ready" ? "ready" : extracted.status === "failed" ? "pending" : "parsing"
-    const logline=extracted.text?await inferLogline(extracted.text):""
+    // Import must remain reliable even when the public AI provider is
+    // unavailable. AI enrichment is performed by the separate review job;
+    // never hold the file upload open waiting for a model or a local CLI.
+    const logline=extracted.text?explicitLogline(extracted.text):""
     const { error: statusError } = await serviceClient
       .from("contents")
       .update({ status: contentStatus, ...(logline?{logline}:{}), updated_at: new Date().toISOString() })
