@@ -187,9 +187,13 @@ export async function enqueueReview(contentId: string, userId: string) {
   if (existingError) throw existingError
   if (existing) return { id: existing.id, status: existing.status, alreadyQueued: true }
 
+  const waitsForLocalClaude = Boolean(process.env.VERCEL)
+  const queuedModel = waitsForLocalClaude || (process.env.AI_PROVIDER || "").toLowerCase() === "claude"
+    ? "claude-sonnet-cli"
+    : "codex-api"
   const { data: review, error } = await serviceClient
     .from("content_reviews")
-    .insert({ content_id: contentId, user_id: userId, reviewer_type: "ai", status: "pending", model: process.env.AI_PROVIDER === "claude" ? "claude-sonnet-cli" : "codex-api", prompt_version: REVIEW_PROMPT_VERSION, result: { workflow: { stage: "等待后台审核", progress: 0 } } })
+    .insert({ content_id: contentId, user_id: userId, reviewer_type: "ai", status: "pending", model: queuedModel, prompt_version: REVIEW_PROMPT_VERSION, result: { workflow: { stage: waitsForLocalClaude ? "等待本机 Claude Sonnet 审核" : "等待后台审核", progress: 0 } } })
     .select("id,status")
     .single()
   if (error) throw error
@@ -197,8 +201,6 @@ export async function enqueueReview(contentId: string, userId: string) {
   // A public Vercel request cannot use the Claude CLI installed on the
   // editor's Mac. In Claude mode it only queues work; the trusted local
   // worker below consumes the same Supabase queue with the logged-in CLI.
-  const waitsForLocalClaude = Boolean(process.env.VERCEL)
-    && (process.env.AI_PROVIDER || "").toLowerCase() === "claude"
   if (!waitsForLocalClaude) startReviewWorker()
   return { ...review, alreadyQueued: false }
 }

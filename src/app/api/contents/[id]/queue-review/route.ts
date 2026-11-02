@@ -24,8 +24,9 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
     // Vercel may freeze a normal timer as soon as the response is sent. `after`
     // keeps the review invocation attached to the request lifecycle so the
     // public deployment actually starts the queued job.
+    // The public workbench is the queue/UI only. Actual screenplay analysis is
+    // intentionally performed by the trusted Mac worker using Claude Sonnet.
     const waitsForLocalClaude = Boolean(process.env.VERCEL)
-      && (process.env.AI_PROVIDER || "").toLowerCase() === "claude"
     if (!review.alreadyQueued && !waitsForLocalClaude) {
       after(async () => {
         const { runQueuedReview } = await import("@/lib/reviews/review-runner")
