@@ -1,17 +1,15 @@
 import { randomUUID } from "node:crypto"
-import { join } from "node:path"
 import { NextResponse } from "next/server"
 import mammoth from "mammoth"
-import { PDFParse } from "pdf-parse"
 import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
 import { runCodex } from "@/lib/ai/codex"
+import { extractPdfText } from "@/lib/pdf/extract-text"
 
 const allowed=new Set(["docx","pdf","txt","md"])
-let workerReady=false
 const extension=(name:string)=>name.split(".").pop()?.toLowerCase()||""
 const safeName=(name:string)=>name.normalize("NFKD").replace(/[^\x00-\x7F]/g,"-").replace(/[^A-Za-z0-9._-]+/g,"-").slice(0,160)||"meeting"
-async function extract(file:File,ext:string){if(ext==="txt"||ext==="md")return (await file.text()).trim();if(ext==="docx")return (await mammoth.extractRawText({buffer:Buffer.from(await file.arrayBuffer())})).value.trim();if(!workerReady){PDFParse.setWorker(join(process.cwd(),"node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"));workerReady=true}const parser=new PDFParse({data:new Uint8Array(await file.arrayBuffer())});try{return (await parser.getText()).text.trim()}finally{await parser.destroy()}}
+async function extract(file:File,ext:string){if(ext==="txt"||ext==="md")return (await file.text()).trim();if(ext==="docx")return (await mammoth.extractRawText({buffer:Buffer.from(await file.arrayBuffer())})).value.trim();return extractPdfText(await file.arrayBuffer())}
 function parseJson(value:string){const clean=value.trim().replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/,"");return JSON.parse(clean.slice(clean.indexOf("{"),clean.lastIndexOf("}")+1)) as {summary?:string;decisions?:string}}
 
 export async function POST(request:Request,context:{params:Promise<{id:string}>}){

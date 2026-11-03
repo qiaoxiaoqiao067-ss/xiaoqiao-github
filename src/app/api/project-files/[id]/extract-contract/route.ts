@@ -1,14 +1,12 @@
-import { join } from "node:path"
 import { NextResponse } from "next/server"
 import mammoth from "mammoth"
-import { PDFParse } from "pdf-parse"
 import { serviceClient } from "@/lib/supabase/service"
 import { requireUser } from "@/lib/supabase/require-user"
 import { runCodex } from "@/lib/ai/codex"
 import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
+import { extractPdfText } from "@/lib/pdf/extract-text"
 
 const BUCKET = "content-files"
-let pdfWorkerConfigured = false
 
 type ContractInfo = { party_a?:string; party_b?:string; amount?:string; copyright_scope?:string; authorization_term?:string; territory?:string; payment_terms?:string; delivery_terms?:string; invoice_terms?:string; effective_date?:string; uncertainties?:string[]; reviewed?:boolean }
 type AssetMeta = { storage_path?:string; file_name?:string; mime_type?:string; file_size?:number; stage?:string; timeline_item_id?:string|null; description?:string; contract_info?:ContractInfo; kind?:string }
@@ -18,7 +16,7 @@ function errorMessage(error:unknown){return error instanceof Error?error.message
 function extension(name:string){return name.split(".").pop()?.toLowerCase()||""}
 function parseJson(raw:string){const fenced=raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]||raw;const start=fenced.indexOf("{");const end=fenced.lastIndexOf("}");if(start<0||end<=start)throw new Error("AI 未返回可解析的合同字段");return JSON.parse(fenced.slice(start,end+1)) as ContractInfo}
 
-async function extractText(buffer:Buffer,name:string){const ext=extension(name);if(ext==="txt"||ext==="md")return buffer.toString("utf8");if(ext==="docx")return (await mammoth.extractRawText({buffer})).value.trim();if(ext==="pdf"){if(!pdfWorkerConfigured){PDFParse.setWorker(join(process.cwd(),"node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"));pdfWorkerConfigured=true}const parser=new PDFParse({data:new Uint8Array(buffer)});try{return (await parser.getText()).text.trim()}finally{await parser.destroy()}}throw new Error("合同识别仅支持 DOCX、PDF、TXT、Markdown")}
+async function extractText(buffer:Buffer,name:string){const ext=extension(name);if(ext==="txt"||ext==="md")return buffer.toString("utf8");if(ext==="docx")return (await mammoth.extractRawText({buffer})).value.trim();if(ext==="pdf")return extractPdfText(buffer);throw new Error("合同识别仅支持 DOCX、PDF、TXT、Markdown")}
 
 export async function POST(_:Request,{params}:{params:Promise<{id:string}>}){
   try{

@@ -1,17 +1,16 @@
 import { randomUUID } from "crypto"
-import { join } from "node:path"
 import { NextResponse } from "next/server"
 import mammoth from "mammoth"
 import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
 import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
+import { extractPdfText } from "@/lib/pdf/extract-text"
 
 export const runtime = "nodejs"
 export const maxDuration = 300
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024
 const ALLOWED_EXTENSIONS = new Set(["docx", "pdf", "txt", "md"])
-let pdfWorkerConfigured = false
 
 function getExtension(name: string) {
   return name.split(".").pop()?.toLowerCase() || ""
@@ -69,26 +68,12 @@ async function extractText(file: File, extension: string) {
     }
   }
   if (extension === "pdf") {
-    // Load the PDF parser only for PDF uploads. Keeping it out of the module
-    // top-level prevents its worker/runtime dependencies from crashing DOCX
-    // uploads on Vercel's Node runtime.
-    const { PDFParse } = await import("pdf-parse")
-    if (!pdfWorkerConfigured) {
-      // Next's bundler relocates server chunks. Configure the worker only after
-      // pdf-parse has been loaded so DOCX/TXT uploads never initialize pdf.js.
-      PDFParse.setWorker(join(process.cwd(), "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"))
-      pdfWorkerConfigured = true
-    }
-    const parser = new PDFParse({ data: new Uint8Array(await file.arrayBuffer()) })
     try {
-      const result = await parser.getText()
-      const text = result.text.trim()
+      const text = await extractPdfText(await file.arrayBuffer())
       if (!text) return { text: null, status: "failed" as const, error: "PDF 未包含可提取文字，可能是扫描件" }
       return { text, status: "ready" as const, error: null }
     } catch (error: unknown) {
       return { text: null, status: "failed" as const, error: errorMessage(error) }
-    } finally {
-      await parser.destroy()
     }
   }
   return { text: null, status: "pending" as const, error: null }

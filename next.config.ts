@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // pdf-parse's Node worker installs DOMMatrix via a native canvas binding.
+  // Keep both packages external to Turbopack so the platform-specific binary
+  // is loaded by Node instead of being embedded into an ESM server chunk.
+  serverExternalPackages: ["pdf-parse", "@napi-rs/canvas"],
   // Keep Turbopack inside this project. Without this explicit root, a parent
   // package-lock can make Next serve stale API route artifacts after refresh.
   turbopack: {

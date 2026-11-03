@@ -1,22 +1,18 @@
-import { join } from "node:path"
 import { NextResponse } from "next/server"
 import mammoth from "mammoth"
-import { PDFParse } from "pdf-parse"
 import { requireUser } from "@/lib/supabase/require-user"
 import { runCodex } from "@/lib/ai/codex"
+import { extractPdfText } from "@/lib/pdf/extract-text"
 
 const GENRES = ["豪门与婚恋情感", "复仇与逆袭", "黑帮与犯罪", "狼人、吸血鬼与超自然", "BL与同性情感", "家庭伦理与亲子", "悬疑惊悚与谜案", "奇幻、重生与规则", "校园与青春", "职场专业剧", "生存、末日与科幻", "动作、竞技与体育", "历史、年代与西部", "喜剧与轻喜", "其他待归类"]
 const TAGS = ["女频", "男频", "BL", "豪门", "黑帮", "狼人", "吸血鬼", "契约婚姻", "闪婚", "追妻", "先婚后爱", "禁忌恋", "年龄差", "多角关系", "复仇", "隐藏身份", "重生", "穿越", "萌宝", "家庭背叛", "甜宠", "虐恋", "医疗", "律政", "校园", "体育", "求生"]
-let workerReady = false
 const extension = (name: string) => name.split(".").pop()?.toLowerCase() || ""
 async function extract(file: File) {
   const type = extension(file.name)
   if (type === "txt" || type === "md") return (await file.text()).trim()
   if (type === "docx") return (await mammoth.extractRawText({ buffer: Buffer.from(await file.arrayBuffer()) })).value.trim()
   if (type === "pdf") {
-    if (!workerReady) { PDFParse.setWorker(join(process.cwd(), "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs")); workerReady = true }
-    const parser = new PDFParse({ data: new Uint8Array(await file.arrayBuffer()) })
-    try { return (await parser.getText()).text.trim() } finally { await parser.destroy() }
+    return extractPdfText(await file.arrayBuffer())
   }
   throw new Error("仅支持 DOCX、PDF、TXT、Markdown")
 }
