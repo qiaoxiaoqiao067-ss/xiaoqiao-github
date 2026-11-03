@@ -135,7 +135,7 @@ export async function runQueuedReview(reviewId: string) {
   }
 }
 
-type WorkerState = { timer?: ReturnType<typeof setInterval>; active: number }
+type WorkerState = { timer?: ReturnType<typeof setInterval>; active: number; polling: boolean }
 const globalWorker = globalThis as typeof globalThis & { __shortDramaReviewWorker?: WorkerState }
 
 // 并发消费待审队列：每条审核是独立的 claude -p 子进程，互不冲突。
@@ -145,7 +145,9 @@ const REVIEW_CONCURRENCY = 5
 
 async function workOnce() {
   const state = globalWorker.__shortDramaReviewWorker
-  if (!state) return
+  if (!state || state.polling) return
+  state.polling = true
+  try {
   // 以「已认领运行中的任务数」为占用计数。runQueuedReview 认领失败（被抢先）会
   // 空转返回，因此这里需要在入队后立即占位，避免同一轮循环内重复认领同一条。
   const runningCount = state.active
@@ -165,10 +167,13 @@ async function workOnce() {
   } finally {
     state.active -= pending.length
   }
+  } finally {
+    state.polling = false
+  }
 }
 
 export function startReviewWorker() {
-  if (!globalWorker.__shortDramaReviewWorker) globalWorker.__shortDramaReviewWorker = { active: 0 }
+  if (!globalWorker.__shortDramaReviewWorker) globalWorker.__shortDramaReviewWorker = { active: 0, polling: false }
   const state = globalWorker.__shortDramaReviewWorker
   if (!state.timer) state.timer = setInterval(() => void workOnce(), 2500)
   void workOnce()
