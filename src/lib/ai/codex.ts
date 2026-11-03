@@ -24,7 +24,19 @@ function runClaude(prompt: string, timeout: number) {
     const child = spawn(
       process.env.CLAUDE_BIN || "claude",
       ["-p", "--model", process.env.CLAUDE_MODEL || "sonnet", "--output-format", "text"],
-      { stdio: ["pipe", "pipe", "pipe"] },
+      {
+        stdio: ["pipe", "pipe", "pipe"],
+        // The editor's interactive Claude settings may point at a local
+        // OpenRouter proxy. Reviews must use the explicitly authorized
+        // first-party OAuth session instead of inheriting that unrelated
+        // proxy and its token limits.
+        env: {
+          ...process.env,
+          ANTHROPIC_BASE_URL: process.env.CLAUDE_REVIEW_BASE_URL || "https://api.anthropic.com",
+          ANTHROPIC_AUTH_TOKEN: process.env.CLAUDE_REVIEW_AUTH_TOKEN || "",
+          ANTHROPIC_API_KEY: process.env.CLAUDE_REVIEW_API_KEY || "",
+        },
+      },
     )
     const output: Buffer[] = []
     const errors: Buffer[] = []

@@ -146,17 +146,26 @@ export default function ContentPage() {
     setBatchReviewing(true)
     let completed = 0
     let failed = 0
+    const batchErrors: Array<{ fileName: string; error?: string }> = []
     for (const item of batchQueueContents) {
       setBatchReviewProgress(`${completed + 1}/${batchQueueContents.length}`)
       try {
         const response = await fetch(`/api/contents/${item.id}/queue-review`, { method: "POST" })
-        if (!response.ok) failed += 1
-      } catch { failed += 1 }
+        if (!response.ok) {
+          failed += 1
+          const data = await response.json().catch(() => ({}))
+          batchErrors.push({ fileName: item.title, error: data.error || `加入审核队列失败（HTTP ${response.status}）` })
+        }
+      } catch (caught) {
+        failed += 1
+        batchErrors.push({ fileName: item.title, error: caught instanceof Error ? caught.message : "网络连接失败" })
+      }
       completed += 1
     }
     setBatchReviewProgress("")
     setBatchReviewing(false)
     await fetchContents(query)
+    if (batchErrors.length) setUploadErrors(batchErrors)
     setUploadMessage(failed ? `已加入审核队列 ${completed - failed} 个，失败 ${failed} 个` : `已将 ${completed} 个剧本加入后台审核队列`)
   }
 

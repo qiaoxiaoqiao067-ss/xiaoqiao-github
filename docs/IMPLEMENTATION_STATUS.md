@@ -227,3 +227,10 @@
 - 新增统一服务器 PDF 提取器，先加载 `pdf-parse` Node worker 提供的 `DOMMatrix`、`Path2D` 和 `ImageData`，再执行文本提取。
 - 剧本上传、会议纪要、知识文件、爆款拆解和合同提取五个 PDF 入口统一使用该提取器。
 - 使用失败批次中的《My Alpha Bodyguard》真实 PDF 回归，成功提取 8,581 个字符；TypeScript、ESLint、权限测试、ADX 测试和生产构建通过。
+
+### 2026-11-03 — Claude 审核通道纠偏
+
+- 定位“已入队但审核失败”的独立原因：本机 Claude Code 虽已登录第一方 OAuth，个人设置仍将调用转发到 `127.0.0.1:15721` 的 OpenRouter 代理，触发 16,000 token 额度限制。
+- 工作台审核子进程改为显式使用 Anthropic 第一方地址和已授权 OAuth，不修改用户日常 Claude Code 配置。
+- 使用同一 Claude Sonnet 命令完成第一方通道探针，返回“审核通道正常”。
+- 批量审核现在保留并显示每个剧本的真实入队失败原因，不再只显示“失败 N 个”。
