@@ -3,13 +3,14 @@ import { loadEnvConfig } from "@next/env"
 loadEnvConfig(process.cwd())
 
 async function main() {
-  if ((process.env.AI_PROVIDER || "").toLowerCase() !== "claude") {
-    throw new Error("本机审核器要求 AI_PROVIDER=claude")
-  }
+  // Reviews use the Codex desktop account by default. This channel is kept
+  // separate from the user's interactive Claude proxy configuration, which
+  // may impose a much smaller token ceiling than a full screenplay requires.
+  process.env.REVIEW_AI_PROVIDER ||= "codex-cli"
 
   const { startReviewWorker } = await import("../src/lib/reviews/review-runner")
   startReviewWorker()
-  console.log(`[${new Date().toISOString()}] 本机 Claude 审核器已启动，模型：${process.env.CLAUDE_MODEL || "sonnet"}`)
+  console.log(`[${new Date().toISOString()}] 本机审核器已启动，通道：${process.env.REVIEW_AI_PROVIDER}`)
   console.log("正在监听公网工作台的待审核队列。按 Ctrl+C 停止。")
 }
 

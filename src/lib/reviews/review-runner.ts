@@ -124,7 +124,7 @@ export async function runQueuedReview(reviewId: string) {
 
     const { error: completeError } = await serviceClient
       .from("content_reviews")
-      .update({ status: "completed", score, result, model: process.env.AI_PROVIDER === "claude" ? "claude-sonnet-cli" : "codex-api", updated_at: new Date().toISOString() })
+      .update({ status: "completed", score, result, model: process.env.REVIEW_AI_PROVIDER === "codex-cli" ? "codex-desktop-cli" : process.env.AI_PROVIDER === "claude" ? "claude-sonnet-cli" : "codex-api", updated_at: new Date().toISOString() })
       .eq("id", reviewId)
     if (completeError) throw completeError
     await serviceClient.from("contents").update({ status: "reviewed", ...(!content.logline&&result.one_line_hook?{logline:String(result.one_line_hook).slice(0,160)}:{}), updated_at: new Date().toISOString() }).eq("id", review.content_id).eq("user_id", review.user_id)

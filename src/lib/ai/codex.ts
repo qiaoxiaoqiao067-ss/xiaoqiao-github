@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process"
 
 const CLAUDE_MAX_OUTPUT_BYTES = 12 * 1024 * 1024
+const CODEX_MAX_OUTPUT_BYTES = 12 * 1024 * 1024
 
 function shortCliError(stderr: string, exitCode: number | null, stdout = "") {
   // Claude Code occasionally prints API errors (including billing failures) to
@@ -76,8 +77,78 @@ function runClaude(prompt: string, timeout: number) {
   })
 }
 
+/**
+ * Run reviews through the Codex desktop account without inheriting the user's
+ * Claude/OpenRouter proxy.  `--ignore-user-config` keeps the review channel
+ * independent from interactive model/provider overrides, while `--ephemeral`
+ * prevents one screenplay from leaking context into the next.
+ */
+function runCodexCli(prompt: string, timeout: number) {
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(
+      process.env.CODEX_BIN || "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+      [
+        "exec",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--skip-git-repo-check",
+        "--color",
+        "never",
+        "-s",
+        "read-only",
+        "-C",
+        "/private/tmp",
+        "-",
+      ],
+      { stdio: ["pipe", "pipe", "pipe"], env: process.env },
+    )
+    const output: Buffer[] = []
+    const errors: Buffer[] = []
+    let outputBytes = 0
+    let settled = false
+    const finish = (callback: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      callback()
+    }
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM")
+      finish(() => reject(new Error(`Codex 审核超时（${Math.round(timeout / 1000)} 秒），请重新加入队列。`)))
+    }, timeout)
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      outputBytes += chunk.length
+      if (outputBytes > CODEX_MAX_OUTPUT_BYTES) {
+        child.kill("SIGTERM")
+        finish(() => reject(new Error("Codex 返回内容过大，审核任务已停止。")))
+        return
+      }
+      output.push(chunk)
+    })
+    child.stderr.on("data", (chunk: Buffer) => errors.push(chunk))
+    child.on("error", (error) => finish(() => reject(new Error(`无法启动 Codex 审核服务：${error.message}`))))
+    child.on("close", (code) => finish(() => {
+      const stdout = Buffer.concat(output).toString("utf8").trim()
+      const stderr = Buffer.concat(errors).toString("utf8").trim()
+      if (code !== 0) {
+        const detail = (stderr || stdout).replace(/\s+/g, " ").slice(0, 900)
+        return reject(new Error(`Codex 审核服务执行失败${code === null ? "" : `（退出码 ${code}）`}${detail ? `：${detail}` : ""}`))
+      }
+      if (!stdout) return reject(new Error("Codex 返回为空"))
+      resolve(stdout)
+    }))
+
+    child.stdin.end(`只完成本次内容任务，不要修改文件或执行命令。\n\n${prompt}`)
+  })
+}
+
 /** Shared AI runner. Claude CLI is the reliable local fallback; HTTP remains available for Codex/OpenRouter. */
 export async function runCodex(prompt: string, timeout = 120000) {
+  if ((process.env.REVIEW_AI_PROVIDER || "").toLowerCase() === "codex-cli" && !process.env.VERCEL) {
+    return runCodexCli(prompt, timeout)
+  }
   // Claude Code is a local executable. It is intentionally never spawned on
   // Vercel/serverless, where the binary does not exist and child processes are
   // not a durable job runner. Public deployments use the configured HTTP
