@@ -46,7 +46,7 @@ type ContentDetail = {
   genre: string | null
   logline: string | null
   archived_at?: string | null
-  content_files: Array<{ id: string; file_name: string; version: number; parse_status: string; extracted_text: string | null; size_bytes: number | null; created_at: string }>
+  content_files: Array<{ id: string; file_name: string; version: number; parse_status: string; parse_error?: string | null; extracted_text: string | null; size_bytes: number | null; created_at: string }>
   content_reviews: Array<{ id: string; reviewer_type: "ai" | "human"; status: string; score: number | null; result: ReviewResult | null; model?: string | null; is_final: boolean; created_at: string }>
 }
 
@@ -69,6 +69,10 @@ const normalizeVerdict = (verdict?: string): HumanVerdict | undefined => {
   if (verdict === "不采用" || verdict === "暂不开发") return "不采用"
   return undefined
 }
+
+const parseErrorLabel = (error?: string | null) => error?.includes("Could not find main document part")
+  ? "文件不是有效的 DOCX 或文件结构已损坏，请用 Word/WPS 重新另存为 DOCX 后上传。"
+  : error || "文件无法解析，请点击上方“上传新版本”重新上传。"
 
 export default function ContentDetailPage() {
   const params = useParams<{ id: string }>()
@@ -301,7 +305,7 @@ export default function ContentDetailPage() {
 
         <div className="grid gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-1"><CardHeader><CardTitle className="text-base">文件版本</CardTitle></CardHeader><CardContent className="space-y-3">
-            {files.length === 0 ? <p className="text-sm text-muted-foreground">尚未上传剧本</p> : files.map((file) => <div key={file.id} className="rounded-lg border p-3"><div className="flex items-start gap-2"><FileText className="mt-0.5 h-4 w-4" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{file.file_name}</p><p className="text-xs text-muted-foreground">版本 {file.version} · 上传于 {new Date(file.created_at).toLocaleString("zh-CN")} · {file.parse_status}</p></div><Button asChild variant="ghost" size="icon"><a href={`/api/contents/files/${file.id}/download`}><Download className="h-4 w-4" /></a></Button></div></div>)}
+            {files.length === 0 ? <p className="text-sm text-muted-foreground">尚未上传剧本</p> : files.map((file) => <div key={file.id} className={`rounded-lg border p-3 ${file.parse_status === "failed" ? "border-red-200 bg-red-50/50" : ""}`}><div className="flex items-start gap-2"><FileText className="mt-0.5 h-4 w-4" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{file.file_name}</p><p className="text-xs text-muted-foreground">版本 {file.version} · 上传于 {new Date(file.created_at).toLocaleString("zh-CN")} · {file.parse_status === "ready" ? "解析完成" : file.parse_status === "failed" ? "解析失败" : "等待解析"}</p>{file.parse_status === "failed" && <p className="mt-1 text-xs text-red-600">{parseErrorLabel(file.parse_error)}</p>}</div><Button asChild variant="ghost" size="icon"><a href={`/api/contents/files/${file.id}/download`}><Download className="h-4 w-4" /></a></Button></div></div>)}
           </CardContent></Card>
 
           <div className="space-y-6 lg:col-span-2">

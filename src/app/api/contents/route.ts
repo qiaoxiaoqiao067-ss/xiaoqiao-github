@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
 
     let query = serviceClient
       .from("contents")
-      .select("*, content_files(id, file_name, version, parse_status, is_primary, created_at), content_reviews(id, reviewer_type, status, score, is_final, result, created_at)")
+      .select("*, content_files(id, file_name, version, parse_status, parse_error, is_primary, created_at), content_reviews(id, reviewer_type, status, score, is_final, result, created_at)")
       .eq("user_id", dataOwnerId)
       .order("updated_at", { ascending: false })
       // This endpoint powers both the list and its script-count metrics. The

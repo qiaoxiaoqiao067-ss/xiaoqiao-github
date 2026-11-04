@@ -18,7 +18,7 @@ export type ContentItem = {
   created_at: string
   updated_at: string
   archived_at?: string | null
-  content_files: Array<{ id: string; file_name: string; version: number; parse_status: string; created_at?: string }>
+  content_files: Array<{ id: string; file_name: string; version: number; parse_status: string; parse_error?: string | null; created_at?: string }>
   content_reviews: Array<{
     id: string
     reviewer_type: string

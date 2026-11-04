@@ -25,6 +25,9 @@ const TYPE_LABEL: Record<ContentItem["content_type"], string> = {
 }
 
 const isApprovedVerdict = (verdict?: string) => verdict === "审核通过" || verdict === "推荐开发"
+const parseErrorLabel = (error?: string | null) => error?.includes("Could not find main document part")
+  ? "文件不是有效的 DOCX 或文件结构已损坏，请用 Word/WPS 重新另存为 DOCX 后上传。"
+  : error || "文件无法解析，请重新上传有效文件。"
 
 export default function ContentPage() {
   const { contents, loading, error, fetchContents, addContent, uploadScripts, deleteContent, setContentStatus } = useContents()
@@ -186,6 +189,10 @@ export default function ContentPage() {
   }
 
   const hasCompletedAiReview = (item: ContentItem) => item.content_reviews.some((review) => review.reviewer_type === "ai" && review.status === "completed" && review.score !== null)
+  const hasActiveAiReview = (item: ContentItem) => item.content_reviews.some((review) => review.reviewer_type === "ai" && (review.status === "pending" || review.status === "running"))
+  const hasReadyFile = (item: ContentItem) => item.content_files.some((file) => file.parse_status === "ready")
+  const hasParseFailure = (item: ContentItem) => item.content_files.length > 0 && !hasReadyFile(item) && item.content_files.some((file) => file.parse_status === "failed")
+  const needsReviewAction = (item: ContentItem) => !hasCompletedAiReview(item) && !hasActiveAiReview(item) && hasReadyFile(item)
   const latestReview = (item: ContentItem, reviewerType: "ai" | "human") => item.content_reviews
     .filter((review) => review.reviewer_type === reviewerType && review.status === "completed")
     .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))[0]
@@ -203,7 +210,9 @@ export default function ContentPage() {
     return null
   }
   const reviewed = contents.filter(hasCompletedAiReview).length
-  const waiting = contents.filter((item) => !hasCompletedAiReview(item)).length
+  // “待处理” means the editor can act now. Parsing failures and reviews
+  // already running have their own visible state and must not inflate it.
+  const waiting = contents.filter(needsReviewAction).length
   const highScore = contents.filter((item) => hasCompletedAiReview(item) && latestAiScore(item) >= 80).length
   const recommended = contents.filter((item) => item.content_reviews.some((review) => review.reviewer_type === "human" && review.status === "completed" && review.is_final && isApprovedVerdict(review.result?.verdict))).length
   const archived = contents.filter((item) => item.status === "archived").length
@@ -212,7 +221,7 @@ export default function ContentPage() {
     if (sourceFilter === "邮箱收稿" && !/邮箱|email|gmail|投稿邮箱/.test(source)) return false
     if (sourceFilter === "小红书收稿" && !/小红书|xhs|xiaohongshu/.test(source)) return false
     if (sourceFilter === "其他来源" && /邮箱|email|gmail|投稿邮箱|小红书|xhs|xiaohongshu/.test(source)) return false
-    if (view === "pending") return !hasCompletedAiReview(item)
+    if (view === "pending") return needsReviewAction(item)
     if (view === "reviewed") return hasCompletedAiReview(item)
     if (view === "high") return hasCompletedAiReview(item) && latestAiScore(item) >= 80
     if (view === "recommended") return item.content_reviews.some((review) => review.reviewer_type === "human" && review.status === "completed" && review.is_final && isApprovedVerdict(review.result?.verdict))
@@ -316,15 +325,19 @@ export default function ContentPage() {
           </CardContent></Card>
         ) : (
           <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
-            {visibleContents.map((item) => (
+            {visibleContents.map((item) => {
+              const parseFailed = hasParseFailure(item)
+              const reviewActive = hasActiveAiReview(item)
+              const stateLabel = parseFailed ? "文件解析失败" : hasCompletedAiReview(item) ? "AI审核完成" : reviewActive ? "AI审核中" : item.status === "parsing" ? "文件解析中" : "待开始审核"
+              return (
               <div key={item.id} className="grid gap-3 border-b p-4 transition-colors last:border-b-0 hover:bg-muted/30 md:grid-cols-[minmax(180px,1.55fr)_92px_minmax(190px,1.35fr)_minmax(130px,1fr)_190px] md:items-center">
-                <div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><Badge variant="secondary" className="shrink-0 text-[10px]">{TYPE_LABEL[item.content_type]}</Badge><Badge variant={hasCompletedAiReview(item) ? "success" : "outline"} className={`shrink-0 text-[10px] ${hasCompletedAiReview(item) ? "" : "border-slate-300 bg-slate-100 text-slate-500"}`}>{hasCompletedAiReview(item) ? "AI审核完成" : item.status === "reviewing" ? "AI审核中" : "未完成审核"}</Badge>{latestReview(item,"ai")?.created_at&&<span className="text-[9px] text-muted-foreground">{new Date(latestReview(item,"ai")!.created_at!).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>}</div><Link href={`/content/${item.id}`} className="block truncate font-medium hover:text-primary" title={item.title}>{item.title}</Link><p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.logline || "自动梗概待补充"}</p>{item.status==="archived"&&item.archived_at&&<p className="mt-1 text-[9px] text-muted-foreground">归档于 {new Date(item.archived_at).toLocaleString("zh-CN")}</p>}</div>
+                <div className="min-w-0"><div className="mb-1 flex flex-wrap items-center gap-2"><Badge variant="secondary" className="shrink-0 text-[10px]">{TYPE_LABEL[item.content_type]}</Badge><Badge variant={parseFailed ? "destructive" : hasCompletedAiReview(item) ? "success" : "outline"} className={`shrink-0 text-[10px] ${parseFailed || hasCompletedAiReview(item) ? "" : "border-slate-300 bg-slate-100 text-slate-500"}`}>{stateLabel}</Badge>{latestReview(item,"ai")?.created_at&&<span className="text-[9px] text-muted-foreground">{new Date(latestReview(item,"ai")!.created_at!).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>}</div><Link href={`/content/${item.id}`} className="block truncate font-medium hover:text-primary" title={item.title}>{item.title}</Link><p className={`mt-1 line-clamp-2 text-xs ${parseFailed ? "text-red-600" : "text-muted-foreground"}`}>{parseFailed ? parseErrorLabel(item.content_files.find((file) => file.parse_status === "failed")?.parse_error) : item.logline || "自动梗概待补充"}</p>{item.status==="archived"&&item.archived_at&&<p className="mt-1 text-[9px] text-muted-foreground">归档于 {new Date(item.archived_at).toLocaleString("zh-CN")}</p>}</div>
                 <div>{hasCompletedAiReview(item) ? <div className="inline-flex min-w-[76px] items-baseline justify-center gap-0.5 whitespace-nowrap rounded-xl border border-[#b8d59f] bg-[#f1f8e9] px-2.5 py-1.5 text-[#205b43]"><span className="mr-1 text-[10px] font-medium">AI评分</span><span className="text-lg font-bold leading-none tabular-nums">{latestAiScore(item)}</span><span className="text-[10px] text-[#527360]">/100</span></div> : <span className="text-sm text-muted-foreground">未审核</span>}</div>
                 {(() => { const preview = reviewPreview(item); return <div className="min-w-0 border-l border-border/70 pl-3"><p className={`truncate text-xs font-semibold ${preview?.tone || "text-muted-foreground"}`}>{preview?.label || "暂无审核结论"}</p><p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground" title={preview?.text}>{preview?.text || "完成 AI 或人工审核后，会在此显示结论摘要。"}</p></div> })()}
-                <div className="space-y-1 text-xs text-muted-foreground"><p className="truncate">{item.source || "未标记来源"}</p><p className="flex items-center gap-1"><Sparkles className="h-3 w-3" />{hasCompletedAiReview(item) ? "AI已完成" : item.status === "reviewing" ? "AI审核中" : "AI待审核"}</p>{latestReview(item,"human")?.is_final&&<p className="font-medium text-[#205b43]">已人工终审</p>}{item.content_reviews.filter((review)=>review.reviewer_type==="ai"&&review.status==="failed").length>0&&<p className="text-[10px] text-amber-700">曾重试 {item.content_reviews.filter((review)=>review.reviewer_type==="ai"&&review.status==="failed").length} 次</p>}</div>
-                <div className="flex flex-wrap justify-start gap-2 md:justify-end"><Button asChild variant="outline" size="sm"><Link href={`/content/${item.id}`}>查看详情</Link></Button>{item.status === "archived" ? <Button size="sm" variant="outline" onClick={() => void setContentStatus(item.id,hasCompletedAiReview(item)?"reviewed":"ready")}><RotateCcw className="mr-1.5 h-3.5 w-3.5"/>恢复</Button> : <>{hasCompletedAiReview(item) || latestReview(item, "human") ? null : item.status === "reviewing" ? <Button variant="outline" size="sm" disabled><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />审核中</Button> : item.status === "ready" && item.content_files.some((file) => file.parse_status === "ready") ? <Button size="sm" disabled={queueingIds.includes(item.id)} onClick={() => void handleSingleReview(item)} className="bg-[#c9f45a] text-[#102a21] hover:bg-[#d8ff74]">{queueingIds.includes(item.id) ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}{queueingIds.includes(item.id) ? "加入中" : "开始审核"}</Button> : <Button variant="outline" size="sm" disabled>等待解析</Button>}<Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="移入历史归档" onClick={() => void setContentStatus(item.id,"archived")}><Archive className="h-4 w-4"/></Button></>}<Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title={`删除《${item.title}》`} aria-label={`删除${item.title}`} onClick={() => setDeleteTarget(item)}><Trash2 className="h-4 w-4" /></Button></div>
+                <div className="space-y-1 text-xs text-muted-foreground"><p className="truncate">{item.source || "未标记来源"}</p><p className="flex items-center gap-1"><Sparkles className="h-3 w-3" />{parseFailed ? "需重新上传" : hasCompletedAiReview(item) ? "AI已完成" : reviewActive ? "AI审核中" : hasReadyFile(item) ? "AI待审核" : "等待文件解析"}</p>{latestReview(item,"human")?.is_final&&<p className="font-medium text-[#205b43]">已人工终审</p>}{item.content_reviews.filter((review)=>review.reviewer_type==="ai"&&review.status==="failed").length>0&&<p className="text-[10px] text-amber-700">曾重试 {item.content_reviews.filter((review)=>review.reviewer_type==="ai"&&review.status==="failed").length} 次</p>}</div>
+                <div className="flex flex-wrap justify-start gap-2 md:justify-end"><Button asChild variant="outline" size="sm"><Link href={`/content/${item.id}`}>{parseFailed ? "重新上传" : "查看详情"}</Link></Button>{item.status === "archived" ? <Button size="sm" variant="outline" onClick={() => void setContentStatus(item.id,hasCompletedAiReview(item)?"reviewed":"ready")}><RotateCcw className="mr-1.5 h-3.5 w-3.5"/>恢复</Button> : <>{hasCompletedAiReview(item) || latestReview(item, "human") ? null : reviewActive ? <Button variant="outline" size="sm" disabled><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />审核中</Button> : parseFailed ? null : hasReadyFile(item) ? <Button size="sm" disabled={queueingIds.includes(item.id)} onClick={() => void handleSingleReview(item)} className="bg-[#c9f45a] text-[#102a21] hover:bg-[#d8ff74]">{queueingIds.includes(item.id) ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}{queueingIds.includes(item.id) ? "加入中" : "开始审核"}</Button> : <Button variant="outline" size="sm" disabled>等待解析</Button>}<Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="移入历史归档" onClick={() => void setContentStatus(item.id,"archived")}><Archive className="h-4 w-4"/></Button></>}<Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title={`删除《${item.title}》`} aria-label={`删除${item.title}`} onClick={() => setDeleteTarget(item)}><Trash2 className="h-4 w-4" /></Button></div>
               </div>
-            ))}
+            )})}
           </div>
         )}
       </div>
