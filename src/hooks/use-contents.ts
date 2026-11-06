@@ -145,9 +145,27 @@ export function useContents() {
       try {
         let data
         try {
-          data = await request("/api/contents/upload", { method: "POST", body: form })
+          if (file.size > 3 * 1024 * 1024) {
+            const uploadId = uploadIds?.[index] || crypto.randomUUID()
+            const init = await request("/api/contents/upload/direct", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "init", fileName: file.name, fileSize: file.size, mimeType: file.type, contentType, uploadId }),
+            }) as { completed?: boolean; contentId: string; storagePath?: string; token?: string; matchedExisting?: boolean }
+            if (init.completed) data = { updatedVersion: init.matchedExisting }
+            else {
+              if (!init.storagePath || !init.token) throw new Error("未能建立大文件上传通道")
+              const supabase = createClient()
+              const { error: storageError } = await supabase.storage.from("content-files").uploadToSignedUrl(init.storagePath, init.token, file, { contentType: file.type || "application/octet-stream" })
+              if (storageError) throw storageError
+              data = await request("/api/contents/upload/direct", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "finalize", fileName: file.name, fileSize: file.size, mimeType: file.type, uploadId, contentId: init.contentId, storagePath: init.storagePath, matchedExisting: init.matchedExisting }),
+              })
+            }
+          } else data = await request("/api/contents/upload", { method: "POST", body: form })
         } catch (caught) {
           if (!(caught instanceof RequestError) || caught.status !== 401 || !await refreshUploadSession(true)) throw caught
+          if (file.size > 3 * 1024 * 1024) throw new Error("登录状态已刷新，请点击“继续上传”完成大文件续传")
           data = await request("/api/contents/upload", { method: "POST", body: form })
         }
         const result = { fileName: file.name, success: true, updatedVersion: Boolean(data.updatedVersion) }
