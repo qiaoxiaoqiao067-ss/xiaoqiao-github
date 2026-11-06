@@ -1,4 +1,5 @@
 import { createBrowserClient } from "@supabase/ssr"
+import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
 export function createClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -37,5 +38,25 @@ export function createClient() {
 
   return createBrowserClient(supabaseUrl, supabaseAnonKey, {
     global: { fetch: browserFetch },
+  })
+}
+
+/**
+ * Storage uploads must bypass the Vercel Supabase proxy. Large request bodies
+ * sent through `/api/supabase` are rejected by Vercel before the route runs.
+ * Signed upload URLs already carry their own short-lived authorization, so a
+ * native browser fetch can safely send the file straight to Supabase Storage.
+ */
+export function createDirectStorageClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error("Supabase credentials not configured")
+  }
+
+  return createSupabaseClient(supabaseUrl, supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: { fetch: (input, init) => window.fetch(input, init) },
   })
 }

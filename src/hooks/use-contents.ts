@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { createClient } from "@/lib/supabase/client"
+import { createClient, createDirectStorageClient } from "@/lib/supabase/client"
 
 export type ContentItem = {
   id: string
@@ -154,7 +154,7 @@ export function useContents() {
             if (init.completed) data = { updatedVersion: init.matchedExisting }
             else {
               if (!init.storagePath || !init.token) throw new Error("未能建立大文件上传通道")
-              const supabase = createClient()
+              const supabase = createDirectStorageClient()
               const { error: storageError } = await supabase.storage.from("content-files").uploadToSignedUrl(init.storagePath, init.token, file, { contentType: file.type || "application/octet-stream" })
               if (storageError) throw storageError
               data = await request("/api/contents/upload/direct", {
