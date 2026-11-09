@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
 import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
 import { extractPdfText } from "@/lib/pdf/extract-text"
+import { hasMeaningfulScriptText, NO_SCRIPT_TEXT_ERROR } from "@/lib/content/meaningful-text"
 
 export const runtime = "nodejs"
 export const maxDuration = 300
@@ -70,7 +71,7 @@ async function extractText(file: File, extension: string) {
   if (extension === "pdf") {
     try {
       const text = await extractPdfText(await file.arrayBuffer())
-      if (!text) return { text: null, status: "failed" as const, error: "PDF 未包含可提取文字，可能是扫描件" }
+      if (!hasMeaningfulScriptText(text)) return { text: null, status: "failed" as const, error: NO_SCRIPT_TEXT_ERROR }
       return { text, status: "ready" as const, error: null }
     } catch (error: unknown) {
       return { text: null, status: "failed" as const, error: errorMessage(error) }

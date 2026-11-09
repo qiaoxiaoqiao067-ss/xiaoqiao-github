@@ -1,6 +1,7 @@
 import { runCodex } from "@/lib/ai/codex"
 import { serviceClient } from "@/lib/supabase/service"
 import { normalizeReviewScore, REVIEW_PROMPT, REVIEW_PROMPT_VERSION } from "@/lib/reviews/review-standard"
+import { hasMeaningfulScriptText, NO_SCRIPT_TEXT_ERROR } from "@/lib/content/meaningful-text"
 
 type ReviewWorkflow = { stage?: string; progress?: number; retries?: number; benchmark_count?: number }
 type ReviewResult = Record<string, unknown> & { workflow?: ReviewWorkflow }
@@ -85,7 +86,7 @@ export async function runQueuedReview(reviewId: string) {
       .limit(1)
     if (fileError) throw fileError
     const script = files?.[0]?.extracted_text
-    if (!script) throw new Error("剧本尚未完成文本解析")
+    if (!hasMeaningfulScriptText(script)) throw new Error(NO_SCRIPT_TEXT_ERROR)
 
     await updateProgress(reviewId, "正在匹配优秀对标库", 25)
     const benchmarks = await loadBenchmarks(review.user_id, review.content_id)

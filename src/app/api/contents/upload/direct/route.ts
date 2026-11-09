@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
 import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
 import { extractPdfText } from "@/lib/pdf/extract-text"
+import { hasMeaningfulScriptText, NO_SCRIPT_TEXT_ERROR } from "@/lib/content/meaningful-text"
 
 export const runtime = "nodejs"
 export const maxDuration = 300
@@ -40,7 +41,7 @@ async function extract(buffer: Buffer, extension: string) {
     try {
       const bytes = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
       const text = await extractPdfText(bytes)
-      return text ? { text, status: "ready" as const, error: null } : { text: null, status: "failed" as const, error: "PDF 未包含可提取文字，可能是扫描件" }
+      return hasMeaningfulScriptText(text) ? { text, status: "ready" as const, error: null } : { text: null, status: "failed" as const, error: NO_SCRIPT_TEXT_ERROR }
     } catch (error) { return { text: null, status: "failed" as const, error: errorMessage(error) } }
   }
   return { text: null, status: "failed" as const, error: "不支持的文件格式" }

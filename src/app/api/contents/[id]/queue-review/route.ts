@@ -4,6 +4,7 @@ import { enqueueReview } from "@/lib/reviews/review-runner"
 import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
 import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
+import { hasMeaningfulScriptText, NO_SCRIPT_TEXT_ERROR } from "@/lib/content/meaningful-text"
 
 export const maxDuration = 300
 
@@ -20,9 +21,10 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
 
     const { data: content, error } = await serviceClient.from("contents").select("id").eq("id", contentId).eq("user_id", ownerId).single()
     if (error || !content) return NextResponse.json({ error: "内容项目不存在" }, { status: 404 })
-    const { data: file, error: fileError } = await serviceClient.from("content_files").select("id").eq("content_id", contentId).eq("user_id", ownerId).eq("parse_status", "ready").limit(1).maybeSingle()
+    const { data: file, error: fileError } = await serviceClient.from("content_files").select("id,extracted_text").eq("content_id", contentId).eq("user_id", ownerId).eq("parse_status", "ready").order("version", { ascending: false }).limit(1).maybeSingle()
     if (fileError) throw fileError
     if (!file) return NextResponse.json({ error: "剧本尚未完成文本解析" }, { status: 409 })
+    if (!hasMeaningfulScriptText(file.extracted_text)) return NextResponse.json({ error: NO_SCRIPT_TEXT_ERROR }, { status: 409 })
 
     const review = await enqueueReview(contentId, ownerId)
     // Vercel may freeze a normal timer as soon as the response is sent. `after`

@@ -13,6 +13,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { ArrowLeft, CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Loader2, PenLine, Sparkles, Trash2, Upload } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { DeleteContentDialog } from "@/components/content/delete-content-dialog"
+import { createDirectStorageClient } from "@/lib/supabase/client"
+import { hasMeaningfulScriptText } from "@/lib/content/meaningful-text"
 
 type ReviewResult = {
   error?: string
@@ -74,6 +76,20 @@ const parseErrorLabel = (error?: string | null) => error?.includes("Could not fi
   ? "文件不是有效的 DOCX 或文件结构已损坏，请用 Word/WPS 重新另存为 DOCX 后上传。"
   : error || "文件无法解析，请点击上方“上传新版本”重新上传。"
 
+async function readApiResponse(response: Response, fallback: string) {
+  const raw = await response.text()
+  let data: Record<string, unknown> = {}
+  if (raw) {
+    try { data = JSON.parse(raw) as Record<string, unknown> }
+    catch {
+      if (!response.ok) throw new Error(response.status >= 500 ? "服务暂时不稳定，请稍后重试。" : fallback)
+      throw new Error("服务器返回格式异常，请刷新页面重试。")
+    }
+  }
+  if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : fallback)
+  return data
+}
+
 export default function ContentDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
@@ -102,13 +118,9 @@ export default function ContentDetailPage() {
     if (!silent) setLoading(true)
     try {
       const response = await fetch(`/api/contents?id=${params.id}`, { cache: "no-store" })
-      const data = await response.json()
-      if (!response.ok) {
-        if (!silent) setError(data.error || "加载失败")
-      } else {
-        setContent(data.content)
-        if (!silent) setError("")
-      }
+      const data = await readApiResponse(response, "内容加载失败")
+      setContent(data.content as ContentDetail)
+      setError("")
     } catch (caught: unknown) {
       if (!silent) setError(caught instanceof Error ? caught.message : "加载失败")
     } finally {
@@ -133,8 +145,7 @@ export default function ContentDetailPage() {
     setError("")
     try {
       const response = await fetch(`/api/contents/${params.id}/queue-review`, { method: "POST" })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || "审核入队失败")
+      await readApiResponse(response, "审核入队失败")
       await loadContent()
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : "审核失败")
@@ -164,12 +175,24 @@ export default function ContentDetailPage() {
     setUploading(true)
     setError("")
     try {
-      const form = new FormData()
-      form.set("file", file)
-      form.set("contentId", params.id)
-      const response = await fetch("/api/contents/upload", { method: "POST", body: form })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || "上传失败")
+      if (file.size > 3 * 1024 * 1024) {
+        const uploadId = crypto.randomUUID()
+        const initResponse = await fetch("/api/contents/upload/direct", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "init", fileName: file.name, fileSize: file.size, mimeType: file.type, contentId: params.id, uploadId }) })
+        const init = await readApiResponse(initResponse, "未能建立大文件上传通道") as { completed?: boolean; contentId?: string; storagePath?: string; token?: string; matchedExisting?: boolean }
+        if (!init.completed) {
+          if (!init.contentId || !init.storagePath || !init.token) throw new Error("未能建立大文件上传通道")
+          const { error: storageError } = await createDirectStorageClient().storage.from("content-files").uploadToSignedUrl(init.storagePath, init.token, file, { contentType: file.type || "application/octet-stream" })
+          if (storageError) throw storageError
+          const finalizeResponse = await fetch("/api/contents/upload/direct", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "finalize", fileName: file.name, fileSize: file.size, mimeType: file.type, uploadId, contentId: init.contentId, storagePath: init.storagePath, matchedExisting: true }) })
+          await readApiResponse(finalizeResponse, "文件登记或解析失败")
+        }
+      } else {
+        const form = new FormData()
+        form.set("file", file)
+        form.set("contentId", params.id)
+        const response = await fetch("/api/contents/upload", { method: "POST", body: form })
+        await readApiResponse(response, "上传失败")
+      }
       await loadContent()
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : "上传失败")
@@ -188,8 +211,7 @@ export default function ContentDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ verdict: humanVerdict, score: Number(humanScore), notes: humanNotes }),
       })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || "保存失败")
+      await readApiResponse(response, "保存失败")
       setHumanNotes("")
       await loadContent()
     } catch (caught: unknown) {
@@ -209,7 +231,7 @@ export default function ContentDetailPage() {
   const latestFailedReview = reviews.find((review) => review.reviewer_type === "ai" && review.status === "failed")
   const latestHuman = reviews.find((review) => review.reviewer_type === "human" && review.status === "completed" && review.is_final)
   const result = latestReview?.result
-  const canReview = files.some((file) => file.parse_status === "ready")
+  const canReview = files.some((file) => file.parse_status === "ready" && hasMeaningfulScriptText(file.extracted_text))
   const linkedProject = projects.find((project) => project.content_id === content.id)
 
   const advanceToDevelopment = async (action: DevelopmentAction) => {
