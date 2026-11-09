@@ -5,6 +5,7 @@ import { serviceClient } from "@/lib/supabase/service"
 import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
 import { extractPdfText } from "@/lib/pdf/extract-text"
 import { hasMeaningfulScriptText, NO_SCRIPT_TEXT_ERROR } from "@/lib/content/meaningful-text"
+import { docxParseError, isLegacyWordDocument, LEGACY_WORD_ERROR } from "@/lib/content/file-signatures"
 
 export const runtime = "nodejs"
 export const maxDuration = 300
@@ -34,8 +35,9 @@ function explicitLogline(text: string) {
 async function extract(buffer: Buffer, extension: string) {
   if (extension === "txt" || extension === "md") return { text: buffer.toString("utf8"), status: "ready" as const, error: null }
   if (extension === "docx") {
+    if (isLegacyWordDocument(buffer)) return { text: null, status: "failed" as const, error: LEGACY_WORD_ERROR }
     try { return { text: (await mammoth.extractRawText({ buffer })).value.trim(), status: "ready" as const, error: null } }
-    catch (error) { return { text: null, status: "failed" as const, error: errorMessage(error) } }
+    catch (error) { return { text: null, status: "failed" as const, error: docxParseError(error) } }
   }
   if (extension === "pdf") {
     try {

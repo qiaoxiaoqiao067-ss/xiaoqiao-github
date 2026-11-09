@@ -74,6 +74,8 @@ const normalizeVerdict = (verdict?: string): HumanVerdict | undefined => {
 
 const parseErrorLabel = (error?: string | null) => error?.includes("Could not find main document part")
   ? "文件不是有效的 DOCX 或文件结构已损坏，请用 Word/WPS 重新另存为 DOCX 后上传。"
+  : /end of central directory|zip file/i.test(error || "")
+    ? "文件实际可能是旧版 DOC，只修改了 .docx 扩展名。请用 Word/WPS 重新另存为 DOCX 后上传。"
   : error || "文件无法解析，请点击上方“上传新版本”重新上传。"
 
 async function readApiResponse(response: Response, fallback: string) {
