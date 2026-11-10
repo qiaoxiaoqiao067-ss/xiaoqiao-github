@@ -871,8 +871,8 @@ export default function MarketDataPage() {
     if (loading || initialPeriodResolved.current) return;
     initialPeriodResolved.current = true;
     const capturedPeriod = localStorage.getItem("market-data-captured-period");
-    const latestImportedPeriod = [...periodOptions].sort(comparePeriods)[0];
-    const target = capturedPeriod || latestImportedPeriod;
+    const latestImportedPeriod = periodOptions.find(option => periodKindFor(option) === "month") || periodOptions[0];
+    const target = capturedPeriod && periodOptions.includes(capturedPeriod) ? capturedPeriod : latestImportedPeriod;
     const timer = target
       ? window.setTimeout(() => setPeriod(target), 0)
       : undefined;
