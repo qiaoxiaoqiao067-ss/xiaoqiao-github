@@ -230,7 +230,7 @@ export default function ContentDetailPage() {
   const reviews = [...content.content_reviews].sort((a, b) => b.created_at.localeCompare(a.created_at))
   const latestReview = reviews.find((review) => review.reviewer_type === "ai" && review.status === "completed")
   const activeReview = reviews.find((review) => review.reviewer_type === "ai" && (review.status === "pending" || review.status === "running"))
-  const latestFailedReview = reviews.find((review) => review.reviewer_type === "ai" && review.status === "failed")
+  const latestFailedReview = reviews.find((review) => review.reviewer_type === "ai" && review.status === "failed" && !(files[0]?.parse_status === "ready" && new Date(files[0].created_at).getTime() > new Date(review.created_at).getTime()))
   const latestHuman = reviews.find((review) => review.reviewer_type === "human" && review.status === "completed" && review.is_final)
   const result = latestReview?.result
   const canReview = files.some((file) => file.parse_status === "ready" && hasMeaningfulScriptText(file.extracted_text))
