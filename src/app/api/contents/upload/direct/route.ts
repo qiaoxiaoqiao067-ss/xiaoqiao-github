@@ -1,17 +1,14 @@
 import { NextResponse } from "next/server"
-import mammoth from "mammoth"
 import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
 import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
-import { extractPdfText } from "@/lib/pdf/extract-text"
-import { hasMeaningfulScriptText, NO_SCRIPT_TEXT_ERROR } from "@/lib/content/meaningful-text"
-import { docxParseError, isLegacyWordDocument, LEGACY_WORD_ERROR } from "@/lib/content/file-signatures"
+import { extractScript, SCRIPT_EXTENSIONS } from "@/lib/content/extract-script"
 
 export const runtime = "nodejs"
 export const maxDuration = 300
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024
-const ALLOWED_EXTENSIONS = new Set(["docx", "pdf", "txt", "md"])
+const ALLOWED_EXTENSIONS = SCRIPT_EXTENSIONS
 
 function extensionOf(name: string) { return name.split(".").pop()?.toLowerCase() || "" }
 function titleFromFile(name: string) { return name.replace(/\.[^.]+$/, "").trim().slice(0, 200) || "未命名剧本" }
@@ -32,22 +29,7 @@ function explicitLogline(text: string) {
   const match = text.replace(/\r/g, "").match(/(?:一句话(?:梗概|钩子|高概念)|高概念|故事简介|剧情梗概)\s*[：:]\s*([^\n]{8,240})/i)
   return match?.[1]?.trim().replace(/\s+/g, " ").slice(0, 160) || ""
 }
-async function extract(buffer: Buffer, extension: string) {
-  if (extension === "txt" || extension === "md") return { text: buffer.toString("utf8"), status: "ready" as const, error: null }
-  if (extension === "docx") {
-    if (isLegacyWordDocument(buffer)) return { text: null, status: "failed" as const, error: LEGACY_WORD_ERROR }
-    try { return { text: (await mammoth.extractRawText({ buffer })).value.trim(), status: "ready" as const, error: null } }
-    catch (error) { return { text: null, status: "failed" as const, error: docxParseError(error) } }
-  }
-  if (extension === "pdf") {
-    try {
-      const bytes = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
-      const text = await extractPdfText(bytes)
-      return hasMeaningfulScriptText(text) ? { text, status: "ready" as const, error: null } : { text: null, status: "failed" as const, error: NO_SCRIPT_TEXT_ERROR }
-    } catch (error) { return { text: null, status: "failed" as const, error: errorMessage(error) } }
-  }
-  return { text: null, status: "failed" as const, error: "不支持的文件格式" }
-}
+const extract = extractScript
 
 export async function POST(request: Request) {
   try {
@@ -63,7 +45,7 @@ export async function POST(request: Request) {
     const mimeType = typeof body.mimeType === "string" ? body.mimeType : "application/octet-stream"
     const extension = extensionOf(fileName)
     if (!fileName || !Number.isFinite(fileSize) || fileSize <= 0 || fileSize > MAX_FILE_SIZE) return NextResponse.json({ error: "文件必须小于 50MB" }, { status: 400 })
-    if (!ALLOWED_EXTENSIONS.has(extension)) return NextResponse.json({ error: "仅支持 DOCX、PDF、TXT、Markdown" }, { status: 400 })
+    if (!ALLOWED_EXTENSIONS.has(extension)) return NextResponse.json({ error: "支持 PDF（含扫描件）、DOC/DOCX、TXT、Markdown、PNG/JPG/WebP" }, { status: 400 })
     if (!validUploadId(body.uploadId)) return NextResponse.json({ error: "上传任务标识无效，请重新选择文件" }, { status: 400 })
     const uploadId = body.uploadId
 

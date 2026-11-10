@@ -244,7 +244,7 @@ export default function ContentPage() {
     <AppLayout>
       <div className="space-y-6">
         <PageHero eyebrow="投稿 · AI初审 · 人工判断" title="责编审稿" description="管理投稿、开发项目、对标内容和个人创作，让每个故事都有清晰的下一步。" action={<div className="flex flex-col gap-2 sm:flex-row">
-            <input ref={fileInput} type="file" multiple accept=".docx,.pdf,.txt,.md" className="hidden" onChange={(event) => void handleFiles(event.target.files)} />
+            <input ref={fileInput} type="file" multiple accept=".doc,.docx,.pdf,.txt,.md,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(event) => void handleFiles(event.target.files)} />
             <select value={uploadType} onChange={(event) => setUploadType(event.target.value as ContentItem["content_type"])} className="h-9 rounded-md border border-[#c9f45a]/60 bg-[#235a43] px-2 text-xs font-semibold text-[#efffd1] shadow-sm"><option className="bg-white text-[#173f31]" value="submission">投稿剧本</option><option className="bg-white text-[#173f31]" value="benchmark">优秀对标库</option><option className="bg-white text-[#173f31]" value="development">重点开发</option><option className="bg-white text-[#173f31]" value="original">我的创作</option></select>
             <Button variant="outline" disabled={uploading} onClick={() => fileInput.current?.click()} className="gap-2 border-white/20 bg-white/5 text-white hover:bg-white hover:text-[#102a21]">
               {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}

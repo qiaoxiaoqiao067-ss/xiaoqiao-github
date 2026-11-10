@@ -166,7 +166,7 @@ export async function runCodex(prompt: string, timeout = 120000) {
     const isOpenRouter = baseUrl.includes("openrouter.ai")
     const endpoint = isOpenRouter ? `${baseUrl.replace(/\/$/, "")}/chat/completions` : `${baseUrl.replace(/\/$/, "")}/responses`
     const body = isOpenRouter
-      ? { model: process.env.OPENAI_MODEL || "openai/gpt-5.3-codex", messages: [{ role: "user", content: `只完成本次内容任务，不要修改文件或执行命令。\n\n${prompt}` }] }
+      ? { model: process.env.OPENAI_MODEL || "openai/gpt-5.3-codex", max_tokens: 8192, messages: [{ role: "user", content: `只完成本次内容任务，不要修改文件或执行命令。\n\n${prompt}` }] }
       : { model: process.env.OPENAI_MODEL || "gpt-5.3-codex", input: `只完成本次内容任务，不要修改文件或执行命令。\n\n${prompt}` }
     const response = await fetch(endpoint, {
       method: "POST",
@@ -180,4 +180,10 @@ export async function runCodex(prompt: string, timeout = 120000) {
     if (!text?.trim()) throw new Error("Codex API 返回为空")
     return text.trim()
   } finally { clearTimeout(timer) }
+}
+
+/** All local review entry points use the same desktop-account channel. */
+export async function runReviewAI(prompt: string, timeout: number) {
+  if (!process.env.VERCEL) return runCodexCli(prompt, timeout)
+  throw new Error("审核任务等待本机审核服务处理，请保持审核服务在线。")
 }

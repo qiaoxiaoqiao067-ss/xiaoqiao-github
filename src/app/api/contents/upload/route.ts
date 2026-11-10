@@ -1,18 +1,15 @@
 import { randomUUID } from "crypto"
 import { NextResponse } from "next/server"
-import mammoth from "mammoth"
 import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
 import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
-import { extractPdfText } from "@/lib/pdf/extract-text"
-import { hasMeaningfulScriptText, NO_SCRIPT_TEXT_ERROR } from "@/lib/content/meaningful-text"
-import { docxParseError, isLegacyWordDocument, LEGACY_WORD_ERROR } from "@/lib/content/file-signatures"
+import { extractScript, SCRIPT_EXTENSIONS } from "@/lib/content/extract-script"
 
 export const runtime = "nodejs"
 export const maxDuration = 300
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024
-const ALLOWED_EXTENSIONS = new Set(["docx", "pdf", "txt", "md"])
+const ALLOWED_EXTENSIONS = SCRIPT_EXTENSIONS
 
 function getExtension(name: string) {
   return name.split(".").pop()?.toLowerCase() || ""
@@ -57,29 +54,7 @@ function errorMessage(error: unknown) {
 }
 
 async function extractText(file: File, extension: string) {
-  if (extension === "txt" || extension === "md") {
-    return { text: await file.text(), status: "ready" as const, error: null }
-  }
-  if (extension === "docx") {
-    try {
-      const buffer = Buffer.from(await file.arrayBuffer())
-      if (isLegacyWordDocument(buffer)) return { text: null, status: "failed" as const, error: LEGACY_WORD_ERROR }
-      const result = await mammoth.extractRawText({ buffer })
-      return { text: result.value.trim(), status: "ready" as const, error: null }
-    } catch (error: unknown) {
-      return { text: null, status: "failed" as const, error: docxParseError(error) }
-    }
-  }
-  if (extension === "pdf") {
-    try {
-      const text = await extractPdfText(await file.arrayBuffer())
-      if (!hasMeaningfulScriptText(text)) return { text: null, status: "failed" as const, error: NO_SCRIPT_TEXT_ERROR }
-      return { text, status: "ready" as const, error: null }
-    } catch (error: unknown) {
-      return { text: null, status: "failed" as const, error: errorMessage(error) }
-    }
-  }
-  return { text: null, status: "pending" as const, error: null }
+  return extractScript(Buffer.from(await file.arrayBuffer()), extension)
 }
 
 function explicitLogline(text:string){
@@ -114,7 +89,7 @@ export async function POST(request: Request) {
 
     const extension = getExtension(file.name)
     if (!ALLOWED_EXTENSIONS.has(extension)) {
-      return NextResponse.json({ error: "仅支持 DOCX、PDF、TXT、Markdown" }, { status: 400 })
+      return NextResponse.json({ error: "支持 PDF（含扫描件）、DOC/DOCX、TXT、Markdown、PNG/JPG/WebP" }, { status: 400 })
     }
     const uploadId = typeof requestedUploadId === "string" && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(requestedUploadId)
       ? requestedUploadId

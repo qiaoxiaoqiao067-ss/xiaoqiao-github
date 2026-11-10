@@ -1,4 +1,4 @@
-import { runCodex } from "@/lib/ai/codex"
+import { runReviewAI as runCodex } from "@/lib/ai/codex"
 import { serviceClient } from "@/lib/supabase/service"
 import { normalizeReviewScore, REVIEW_PROMPT, REVIEW_PROMPT_VERSION } from "@/lib/reviews/review-standard"
 import { hasMeaningfulScriptText, NO_SCRIPT_TEXT_ERROR } from "@/lib/content/meaningful-text"
@@ -125,7 +125,7 @@ export async function runQueuedReview(reviewId: string) {
 
     const { error: completeError } = await serviceClient
       .from("content_reviews")
-      .update({ status: "completed", score, result, model: process.env.REVIEW_AI_PROVIDER === "codex-cli" ? "codex-desktop-cli" : process.env.AI_PROVIDER === "claude" ? "claude-sonnet-cli" : "codex-api", updated_at: new Date().toISOString() })
+      .update({ status: "completed", score, result, model: "codex-desktop-cli", updated_at: new Date().toISOString() })
       .eq("id", reviewId)
     if (completeError) throw completeError
     await serviceClient.from("contents").update({ status: "reviewed", ...(!content.logline&&result.one_line_hook?{logline:String(result.one_line_hook).slice(0,160)}:{}), updated_at: new Date().toISOString() }).eq("id", review.content_id).eq("user_id", review.user_id)
@@ -174,6 +174,9 @@ async function workOnce() {
 }
 
 export function startReviewWorker() {
+  // Listing contents also calls this function. Never let a serverless page
+  // request claim work intended for the authenticated desktop worker.
+  if (process.env.VERCEL) return
   if (!globalWorker.__shortDramaReviewWorker) globalWorker.__shortDramaReviewWorker = { active: 0, polling: false }
   const state = globalWorker.__shortDramaReviewWorker
   if (!state.timer) state.timer = setInterval(() => void workOnce(), 2500)
@@ -193,20 +196,15 @@ export async function enqueueReview(contentId: string, userId: string) {
   if (existingError) throw existingError
   if (existing) return { id: existing.id, status: existing.status, alreadyQueued: true }
 
-  const waitsForLocalClaude = Boolean(process.env.VERCEL)
-  const queuedModel = waitsForLocalClaude || (process.env.AI_PROVIDER || "").toLowerCase() === "claude"
-    ? "claude-sonnet-cli"
-    : "codex-api"
+  const waitsForLocalWorker = Boolean(process.env.VERCEL)
   const { data: review, error } = await serviceClient
     .from("content_reviews")
-    .insert({ content_id: contentId, user_id: userId, reviewer_type: "ai", status: "pending", model: queuedModel, prompt_version: REVIEW_PROMPT_VERSION, result: { workflow: { stage: waitsForLocalClaude ? "等待本机 Claude Sonnet 审核" : "等待后台审核", progress: 0 } } })
+    .insert({ content_id: contentId, user_id: userId, reviewer_type: "ai", status: "pending", model: "codex-desktop-cli", prompt_version: REVIEW_PROMPT_VERSION, result: { workflow: { stage: "等待本机 Codex 审核", progress: 0 } } })
     .select("id,status")
     .single()
   if (error) throw error
   await serviceClient.from("contents").update({ status: "reviewing", updated_at: new Date().toISOString() }).eq("id", contentId).eq("user_id", userId)
-  // A public Vercel request cannot use the Claude CLI installed on the
-  // editor's Mac. In Claude mode it only queues work; the trusted local
-  // worker below consumes the same Supabase queue with the logged-in CLI.
-  if (!waitsForLocalClaude) startReviewWorker()
+  // Public requests only enqueue; the local worker uses the desktop account.
+  if (!waitsForLocalWorker) startReviewWorker()
   return { ...review, alreadyQueued: false }
 }
