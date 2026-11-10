@@ -3,6 +3,7 @@ import nodeFs from "node:fs"
 import path from "node:path"
 import * as XLSX from "xlsx"
 import { chromium, type BrowserContext, type Page } from "playwright-core"
+import { MARKET_SAMPLE_LIMITS } from "../market/monitoring-policy"
 
 const ADX_URL = "https://oversea-v2.dataeye.com/playlet/playlet-rank"
 const profileDir = path.join(process.cwd(), ".local", "adx-profile")
@@ -13,7 +14,7 @@ type RankType = "day" | "week" | "month"
 export type AdxBoardType = "short-drama" | "tiktok-hot" | "platform"
 export const ADX_PLATFORM_NAMES = ["DramaBox", "DramaWave", "FreeReels", "GoodShort", "MoboReels", "NetShort", "ReelShort", "ShortMax", "Vigloo", "StardustTV", "PineDrama", "FlickReels"] as const
 export function capAdxExportRows<T extends Record<string, unknown>>(rows: T[], rankType: RankType, platform?: string): (T & { 平台?: string })[] {
-  const limit = rankType === "day" ? 50 : rankType === "week" ? 300 : 500
+  const limit = MARKET_SAMPLE_LIMITS[rankType]
   return rows.slice(0, 5000).slice(0, limit).map((row) => platform ? { ...row, 平台: platform } : row)
 }
 const BOARD_LABELS: Record<AdxBoardType, string> = {

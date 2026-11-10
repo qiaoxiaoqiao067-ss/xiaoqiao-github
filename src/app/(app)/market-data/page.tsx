@@ -12,6 +12,8 @@ import {
   YAxis,
 } from "recharts";
 import { AppLayout } from "@/components/layout/app-layout";
+import { MonitorOverview } from "@/components/market/monitor-overview";
+import { sampleMarketRows, latestBoardImports, marketBoardKey } from "@/lib/market/monitoring-policy";
 import { PageHero } from "@/components/layout/page-hero";
 import { useIdeas } from "@/hooks/use-ideas";
 import {
@@ -78,10 +80,12 @@ type Work = {
   heat: number | null;
   period: string;
   sourceId: string;
+  boardKey: string;
   signal: Signal;
 };
 type Bucket = { name: string; value: number; heat: number };
 type Dataset = {
+  boardKey: string;
   name: string;
   period: string;
   rows: number;
@@ -393,16 +397,8 @@ function buildTrendAnalysis(periods: string[], dashboards: Map<string, Dashboard
   const previousPeriod = currentIndex > 0 ? ordered[currentIndex - 1] : "";
   const current = dashboards.get(currentPeriod);
   const previous = dashboards.get(previousPeriod);
-  const familyFor = (name: string) => {
-    if (/TK短剧热播榜|TikTok/i.test(name)) return "tiktok-hot";
-    if (/短剧榜/.test(name) && !/热播榜/.test(name)) return "short-drama-ranking";
-    const platforms = ["Vigloo", "DramaBox", "DramaWave", "FreeReels", "NetShort", "MoboReels", "PineDrama", "GoodShort", "StardustTV", "ShortMax", "ReelShort", "FlickReels"];
-    const platform = platforms.find((item) => name.toLowerCase().includes(item.toLowerCase()));
-    if (platform) return `platform:${platform.toLowerCase()}`;
-    return `other:${normalizeTitle(name.replace(/20\d{2}[-_.年]?\d{1,2}(?:[-_.月]\d{1,2})?/g, ""))}`;
-  };
   const profileFor = (dashboard?: Dashboard) =>
-    (dashboard?.datasets || []).map((item) => familyFor(item.name)).sort().join("|");
+    (dashboard?.datasets || []).map((item) => `${item.boardKey}:${item.signal}:${item.aiRows}`).sort().join("|");
   const comparable = Boolean(previous && current && profileFor(current) === profileFor(previous));
   const streakFor = (name: string, pick: (dashboard: Dashboard) => Bucket[]) => {
     let streak = 0;
@@ -427,20 +423,22 @@ function buildTrendAnalysis(periods: string[], dashboards: Map<string, Dashboard
   const previousGenres = previous?.genres || [];
   const previousGenreNames = new Set(previousGenres.map((item) => item.name));
   const currentGenreNames = new Set(currentGenres.map((item) => item.name));
-  const previousWorks = new Map((previous?.works || []).map((item) => [item.titleKey, item]));
-  const works = [...new Map((current?.works || []).map((item) => [item.titleKey, item])).values()]
-    .filter((item) => previousWorks.has(item.titleKey))
+  const workKey = (item: Work) => `${item.boardKey}:${item.titleKey}`;
+  const previousWorks = new Map((previous?.works || []).map((item) => [workKey(item), item]));
+  const works = [...new Map((current?.works || []).map((item) => [workKey(item), item])).values()]
+    .filter((item) => previousWorks.has(workKey(item)))
     .map((item) => {
-      const prior = previousWorks.get(item.titleKey);
+      const prior = previousWorks.get(workKey(item));
       const currentRank = item.rank;
       const previousRank = prior?.rank ?? null;
       let streak = 0;
       for (let index = currentIndex; index >= 0; index -= 1) {
         const data = dashboards.get(ordered[index]);
-        if (!data?.works.some((work) => work.titleKey === item.titleKey)) break;
+        if (!data?.works.some((work) => workKey(work) === workKey(item))) break;
         streak += 1;
       }
-      return { title: item.title, titleCn: item.titleCn, currentRank, previousRank, movement: currentRank !== null && previousRank !== null ? previousRank - currentRank : 0, streak };
+      const sourceLabel = item.signal === "tk" ? "TikTok榜" : item.signal === "ad" ? "投放榜" : `${item.platform}榜`;
+      return { title: `${item.title} · ${sourceLabel}`, titleCn: item.titleCn ? `${item.titleCn} · ${sourceLabel}` : "", currentRank, previousRank, movement: currentRank !== null && previousRank !== null ? previousRank - currentRank : 0, streak };
     })
     .sort((a, b) => b.movement - a.movement || b.streak - a.streak)
     .slice(0, 8);
@@ -467,7 +465,7 @@ function analyze(
   genreAliasMap: Record<string, string> = {},
   fieldRoleMap: Record<string, FieldRole> = {},
 ): Dashboard {
-  const marketImports = imports.filter(isMarketImport);
+  const marketImports = latestBoardImports(imports.filter(isMarketImport));
   const genres = new Map<string, Bucket>(),
     adGenres = new Map<string, Bucket>(),
     tkGenres = new Map<string, Bucket>(),
@@ -498,7 +496,16 @@ function analyze(
     let hasHeat = false;
     let aiRows = 0;
     let rowOrdinal = 0;
-    for (const row of source.raw_rows || []) {
+    const eligibleRows = (source.raw_rows || []).filter(row => {
+      const genreKey = mappedKeyFor(row, GENRE, fieldRoleMap, "genre");
+      const titleKey = mappedKeyFor(row, TITLE, fieldRoleMap, "title");
+      return Boolean(titleKey && text(row[titleKey]) && genreKey && text(row[genreKey]).split(/[、,，/]/).map(tag => tag.trim()).includes("AI仿真人"));
+    });
+    const sampledRows = sampleMarketRows(eligibleRows, periodKindFor(source.period_label || ""), row => {
+      const rankKey = mappedKeyFor(row, RANK, fieldRoleMap, "rank");
+      return rankKey ? numeric(row[rankKey]) : null;
+    });
+    for (const row of sampledRows) {
       const stableRowKey = `${source.id}:${rowOrdinal++}`;
       const titleKey = mappedKeyFor(row, TITLE, fieldRoleMap, "title"),
         titleCnKey = keyFor(row, TITLE_CN),
@@ -603,6 +610,7 @@ function analyze(
             heat,
             period: source.period_label || "未标记统计期",
             sourceId: source.id,
+            boardKey: marketBoardKey(source.source_name, source.file_name),
             signal,
           });
         else {
@@ -618,6 +626,7 @@ function analyze(
       }
     }
     datasets.push({
+      boardKey: marketBoardKey(source.source_name, source.file_name),
       name: source.file_name,
       period: source.period_label || "未标记统计期",
       rows: source.row_count,
@@ -876,28 +885,6 @@ export default function MarketDataPage() {
     () => activeImportsForPeriod(imports, period),
     [imports, period],
   );
-  const sourceCoverage = useMemo(() => {
-    const fileNames = periodImports
-      .filter(isMarketImport)
-      .map((item) => item.file_name || item.source_name);
-    const hasMainRanking = fileNames.some(
-      (name) => /短剧榜/.test(name) && !/热播榜/.test(name),
-    );
-    const hasTikTokRanking = fileNames.some((name) => /TK短剧热播榜|TikTok/i.test(name));
-    const platformNames = [
-      "Vigloo", "DramaBox", "DramaWave", "FreeReels", "NetShort", "MoboReels",
-      "PineDrama", "GoodShort", "StardustTV", "ShortMax", "ReelShort", "FlickReels",
-    ];
-    const platformCount = platformNames.filter((platform) =>
-      fileNames.some((name) => name.toLowerCase().includes(platform.toLowerCase())),
-    ).length;
-    return {
-      count: Number(hasMainRanking) + Number(hasTikTokRanking) + platformCount,
-      hasMainRanking,
-      hasTikTokRanking,
-      platformCount,
-    };
-  }, [periodImports]);
   const dashboard = useMemo(
     () =>
       analyze(
@@ -1223,8 +1210,8 @@ export default function MarketDataPage() {
       setMessage(`“${period}”没有可生成简报的数据。`);
       return;
     }
-    const leadGenre = dashboard.sharedGenres[0] || dashboard.genres[0];
-    const leadWork = dashboard.opportunities[0];
+    const leadGenre = dashboard.genres[0];
+    const leadWork = dashboard.overlapWorks[0];
     const sharedGenres = dashboard.sharedGenres.slice(0, 8).map((item) => item.name);
     const book = XLSX.utils.book_new();
     const append = (name: string, rows: Record<string, unknown>[], widths: number[]) => {
@@ -1242,10 +1229,10 @@ export default function MarketDataPage() {
         { 项目: "双信号验证", 内容: `${dashboard.overlapCount.toLocaleString()} 个严格同名作品` },
         { 项目: "优先题材", 内容: leadGenre ? `${leadGenre.name}（出现 ${leadGenre.value.toLocaleString()} 次）` : "待识别" },
         { 项目: "共同题材底盘", 内容: sharedGenres.length ? sharedGenres.join("、") : "当前未形成跨来源共同题材" },
-        { 项目: "重点作品", 内容: leadWork ? `${leadWork.titleCn || leadWork.title}｜${leadWork.quadrant}｜机会指数 ${leadWork.score}` : "暂无双信号重点作品" },
-        { 项目: "本月判断", 内容: "投放信号反映市场在推什么，TikTok播放信号反映用户在看什么；共同出现的题材与作品优先验证。" },
+        { 项目: "重点作品", 内容: leadWork ? `${leadWork.titleCn || leadWork.title}｜投放与TikTok共同出现，待核验` : "暂无双信号重点作品" },
+        { 项目: "本期判断", 内容: "投放信号反映市场在推什么，TikTok播放信号反映用户在看什么；共同出现的题材与作品优先验证。" },
         { 项目: "建议动作", 内容: leadGenre ? `围绕“${leadGenre.name}”拆解具体人物关系、前三集钩子、付费卡点与AI制作可行性。` : "先补齐题材字段和双来源样本。" },
-        { 项目: "口径与风险", 内容: "本简报基于当前月榜，只支持当期市场结构判断；广告预估曝光与TikTok播放增量口径不同，不做简单求和。" },
+        { 项目: "口径与风险", 内容: "每来源、每榜单日50/周300/月500；基于当前样本，不等于整个市场。广告预估曝光与TikTok播放增量分开呈现。" },
       ],
       [18, 90],
     );
@@ -1259,7 +1246,6 @@ export default function MarketDataPage() {
         AI样本次数: item.value,
         投放榜次数: adGenreMap.get(item.name)?.value || 0,
         TikTok榜次数: tkGenreMap.get(item.name)?.value || 0,
-        累计热度: item.heat,
         信号判断: dashboard.sharedGenres.some((genre) => genre.name === item.name) ? "双来源共同题材" : "单来源信号",
       })),
       [8, 18, 15, 15, 16, 18, 20],
@@ -1675,9 +1661,10 @@ export default function MarketDataPage() {
         <PageHero
           eyebrow="ADX · 海外短剧 · 市场趋势"
           title="市场数据看板"
-          description="分析海外AI仿真人短剧的投放与播放表现；中文名仅用于团队阅读，海外原名用于作品识别与跨平台匹配。"
+          description="日榜发现信号，周榜验证持续性，月榜形成方向判断。每个来源、每个榜单分别采样，再合并作品与证据。"
           action={
             <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" className="bg-[#c9f45a] text-[#173f31] hover:bg-[#d8ff76]" onClick={() => { setActiveView("data"); setImportExpanded(true); }}>采集 / 上传数据</Button>
               {dashboard.datasets.length > 0 && (
                 <Button
                   size="sm"
@@ -1686,12 +1673,23 @@ export default function MarketDataPage() {
                   className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
                 >
                   <FileDown className="mr-1.5 h-4 w-4" />
-                  导出月度简报
+                  导出本期简报
                 </Button>
               )}
             </div>
           }
         />
+        <MarketViewTabs activeView={activeView} onChange={setActiveView} />
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#d7e4c8] bg-white p-4">
+          <div><p className="text-sm font-semibold text-[#173f31]">每来源 · 每榜单：日50 / 周300 / 月500</p><p className="mt-1 text-xs text-muted-foreground">当前已配置短剧榜、TikTok榜与平台榜；AI仿真人样本单独分析。</p></div>
+          <label className="flex items-center gap-2 text-xs text-[#61766b]">统计期
+            <select aria-label="监测统计期" value={periodOptions.includes(period) ? period : ""} onChange={(event) => setPeriod(event.target.value)} className="h-9 max-w-full rounded-lg border border-[#c8d9bc] bg-white px-3 text-sm text-[#173f31]">
+              <option value="" disabled>暂无已导入周期</option>
+              {periodOptions.filter(option => periodKindFor(option) === periodKindFor(period)).map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+        </div>
+        {activeView === "data" && <>
         <section className="overflow-hidden rounded-2xl border border-[#cfe0bf] bg-gradient-to-br from-[#f7fbef] via-white to-[#eef7e7] shadow-[0_16px_40px_rgba(23,63,49,0.07)]">
           <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#dce9d2] px-5 py-4">
             <div className="flex items-start gap-3">
@@ -1709,15 +1707,7 @@ export default function MarketDataPage() {
                 {importExpanded ? "收起导入区" : "展开导入区"}
               </Button>
             </div>
-            {periodOptions.length > 0 && (
-              <label className="grid gap-1.5 text-xs text-[#61766b]">
-                <span>查看已有周期</span>
-                <select value={periodOptions.includes(period) ? period : ""} onChange={(event) => setPeriod(event.target.value)} className="h-9 min-w-40 rounded-lg border border-[#c8d9bc] bg-white px-3 text-sm text-[#173f31] outline-none focus:ring-2 focus:ring-[#b6dc61]">
-                  <option value="" disabled>选择周期</option>
-                  {periodOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                </select>
-              </label>
-            )}
+
           </div>
           {importExpanded && <>
           <div className="grid gap-4 px-5 py-5 lg:grid-cols-[1.15fr_1fr_1fr_auto] lg:items-end">
@@ -1916,6 +1906,7 @@ export default function MarketDataPage() {
           </section>
           </details>
         )}
+        </>}
         {error && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-destructive/10 px-4 py-3 text-sm text-destructive">
             <span>数据服务暂时没有响应：{error}</span>
@@ -1929,7 +1920,7 @@ export default function MarketDataPage() {
             “{period}”尚未导入市场数据。请选择已有月份，或保持该月份后上传新榜单。
           </p>
         )}
-        <MarketViewTabs activeView={activeView} onChange={setActiveView} />
+
         <PeriodKindSwitch
           active={periodKindFor(period)}
           monthCount={periodGroups.month.length}
@@ -1975,42 +1966,7 @@ export default function MarketDataPage() {
             </Button>
           </div>
         )}
-        {activeView === "overview" && (
-          <div className="space-y-6">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Metric
-            label="当期榜单覆盖"
-            value={loading ? "—" : `${sourceCoverage.count}/14`}
-            note={`短剧榜 ${Number(sourceCoverage.hasMainRanking)}/1 · TikTok ${Number(sourceCoverage.hasTikTokRanking)}/1 · 平台榜 ${sourceCoverage.platformCount}/12`}
-          />
-          <Metric
-            label="AI仿真人作品"
-            value={loading ? "—" : dashboard.totalWorks.toLocaleString()}
-            note={`${dashboard.totalRows.toLocaleString()} 条AI榜单记录`}
-          />
-          <Metric
-            label="双信号验证作品"
-            value={dashboard.overlapCount.toLocaleString()}
-            note="同时进入投放榜与TikTok榜"
-          />
-          <Metric
-            label="当前周期高频题材"
-            value={dashboard.genres[0]?.name || "待识别"}
-            note={
-              dashboard.genres[0]
-                ? `AI样本出现 ${dashboard.genres[0].value} 次`
-                : latest?.period_label || "上传后显示"
-            }
-          />
-        </div>
-        {dashboard.datasets.length > 0 && <MarketConclusions dashboard={dashboard} period={period} periodCount={trendAnalysis.periodCount} periodKind={trendAnalysis.periodKind} />}
-        {dashboard.datasets.length > 0 && <ExecutiveCharts dashboard={dashboard} />}
-        {dashboard.datasets.length > 0 && (
-          <TrendSnapshot trend={trendAnalysis} onOpen={() => { setActiveView("analysis"); setAnalysisMode("trends"); }} />
-        )}
-        <ADXDecisionOverview dashboard={dashboard} assetRanking={assetRanking} externalSignals={externalSignals} period={period} />
-          </div>
-        )}
+        {activeView === "overview" && <MonitorOverview data={dashboard} trend={trendAnalysis} kind={periodKindFor(period)} period={period} loading={loading} onCollect={() => setActiveView("data")} onInspect={(mode) => { setActiveView("analysis"); setAnalysisMode(mode); }} />}
         {activeView === "analysis" && (
           <div className="space-y-6">
         <AnalysisModeTabs activeMode={analysisMode} onChange={setAnalysisMode} />
@@ -2278,7 +2234,7 @@ export default function MarketDataPage() {
                 empty="导入TikTok热播榜后显示剧场号覆盖。"
               />
             </div>
-            <PlatformComparison dashboard={dashboard} previousDashboard={periodDashboards.get(trendAnalysis.previousPeriod)} />
+            <PlatformComparison dashboard={dashboard} previousDashboard={trendAnalysis.comparable ? periodDashboards.get(trendAnalysis.previousPeriod) : undefined} />
             <MarketCoverageNote />
           </div>
         )}
@@ -2482,99 +2438,6 @@ export default function MarketDataPage() {
       </div>
     </AppLayout>
   );
-}
-
-function ADXDecisionOverview({ dashboard, assetRanking, externalSignals, period }: { dashboard: Dashboard; assetRanking: AssetRankRow[]; externalSignals: ExternalSignal[]; period: string }) {
-  const [summaryTab, setSummaryTab] = useState<"rank" | "materials" | "social">("rank");
-  const topWorks = dashboard.works.filter((item) => item.signal === "ad").slice(0, 20);
-  const socialNames = ["TikTok", "Facebook", "YouTube"];
-  const socialRows = socialNames.map((name) => {
-    const matcher = name === "TikTok" ? /tiktok|tk|抖音/i : name === "Facebook" ? /facebook|face|fb/i : /youtube|油管|yt/i;
-    const buckets = dashboard.platforms.filter((item) => matcher.test(item.name));
-    const signals = externalSignals.filter((item) => matcher.test(item.source) || matcher.test(item.topic));
-    return {
-      name,
-      samples: buckets.reduce((sum, item) => sum + item.value, 0),
-      heat: buckets.reduce((sum, item) => sum + item.heat, 0) + signals.reduce((sum, item) => sum + (item.value || 0), 0),
-      status: buckets.length || signals.length ? "已接入数据" : "等待数据",
-    };
-  });
-
-  return (
-    <section aria-labelledby="adx-summary-title" className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="section-kicker">MARKET SNAPSHOT</p>
-          <h2 id="adx-summary-title" className="mt-1 text-xl font-semibold text-[#173f31]">市场快照与榜单明细</h2>
-          <p className="mt-1 text-sm text-muted-foreground">集中查看 {period} 已导入的榜单、素材与平台数据。</p>
-        </div>
-        <div className="flex items-center gap-2 rounded-full border border-[#cfe0bf] bg-[#f6f9f1] px-3 py-1.5 text-xs text-[#456052]">
-          <span className={`h-2 w-2 rounded-full ${dashboard.datasets.length ? "bg-emerald-500" : "bg-amber-400"}`} />
-          {dashboard.datasets.length ? "文件数据已连接" : "等待导入 ADX 数据"}
-          <span className="text-[#8a9b91]">· 榜单导入状态</span>
-        </div>
-      </div>
-      <div role="tablist" aria-label="周期数据摘要" className="flex flex-wrap gap-1 rounded-xl border border-[#d7e4c8] bg-[#f7f9f3] p-1">
-        {([
-          ["rank", "短剧榜 Top 20"],
-          ["materials", "总素材数 Top 50"],
-          ["social", "社媒表现"],
-        ] as const).map(([value, label]) => (
-          <button key={value} type="button" role="tab" aria-selected={summaryTab === value} onClick={() => setSummaryTab(value)} className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${summaryTab === value ? "bg-[#173f31] text-white" : "text-[#50675b] hover:bg-white"}`}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {summaryTab === "rank" && (
-        <Card className="overflow-hidden border-[#d7e4c8]">
-          <CardHeader className="border-b border-[#e4eadc] bg-[#f7f9f3] pb-4">
-            <div className="flex items-center justify-between gap-3">
-              <div><p className="text-xs font-semibold tracking-[.16em] text-[#6f8a7b]">SHORT DRAMA RANKING TOP 20</p><CardTitle className="mt-1 text-base">短剧榜 Top 20（按总素材数排序）</CardTitle></div>
-              <Badge variant="outline">{topWorks.length}/20</Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="max-h-[520px] overflow-y-auto p-0">
-            {topWorks.length ? topWorks.map((work, index) => (
-              <div key={`${work.sourceId}:${work.titleKey}`} className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-3 border-b border-border/60 px-4 py-3 last:border-0">
-                <span className={`text-center text-sm font-bold ${index < 3 ? "text-[#4f7a37]" : "text-muted-foreground"}`}>{String(index + 1).padStart(2, "0")}</span>
-                <div className="min-w-0"><p className="truncate text-sm font-semibold">{work.titleCn || work.title}</p><p className="mt-0.5 truncate text-xs text-muted-foreground">{work.titleCn ? work.title : work.genre}</p></div>
-                <div className="text-right"><p className="text-xs font-medium">{work.platform}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{work.heat ? short(work.heat) : work.rank ? `榜单 #${work.rank}` : "—"}</p></div>
-              </div>
-            )) : <EmptySummary text="当前周期尚无短剧总榜；导入该榜后显示按总素材数排列的前20部作品。" />}
-          </CardContent>
-        </Card>
-      )}
-      {summaryTab === "materials" && (
-        <Card className="overflow-hidden border-[#d7e4c8]">
-          <CardHeader className="border-b border-[#e4eadc] bg-[#f7f9f3] pb-4">
-            <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-semibold tracking-[.16em] text-[#6f8a7b]">TOTAL MATERIALS 50</p><CardTitle className="mt-1 text-base">按总素材数排序的作品 Top 50</CardTitle></div><Badge variant="outline">{assetRanking.length}/50</Badge></div>
-          </CardHeader>
-          <CardContent className="max-h-[520px] overflow-y-auto p-0">
-              {assetRanking.length ? assetRanking.map((item, index) => (
-              <div key={`${item.source}:${item.title}`} className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-3 border-b border-border/60 px-4 py-3 last:border-0">
-                <span className="text-center text-xs font-semibold text-muted-foreground">{index + 1}</span>
-                <div className="min-w-0"><p className="truncate text-sm font-semibold">{item.title}</p><p className="mt-0.5 truncate text-xs text-muted-foreground">{item.genre} · {item.platform}</p></div>
-                <p className="text-xs font-semibold text-[#315f4a]">{short(item.totalMaterials)} 条素材</p>
-              </div>
-            )) : <EmptySummary text="当前周期未导入包含“总素材数”的短剧榜；这里展示的是作品素材数量，不是单条创意素材。" />}
-          </CardContent>
-        </Card>
-      )}
-      {summaryTab === "social" && (
-        <Card className="border-[#d7e4c8]">
-          <CardHeader><p className="text-xs font-semibold tracking-[.16em] text-[#6f8a7b]">SOCIAL CHANNELS</p><CardTitle className="mt-1 text-base">多平台表现</CardTitle></CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-3">
-            {socialRows.map((item) => <div key={item.name} className="rounded-2xl border border-[#dfe8d7] bg-[#fafbf7] p-4"><div className="flex items-center justify-between gap-2"><p className="font-semibold">{item.name}</p><span className={`h-2 w-2 rounded-full ${item.status === "已接入数据" ? "bg-emerald-500" : "bg-slate-300"}`} /></div><p className="mt-5 text-2xl font-semibold text-[#173f31]">{item.heat ? short(item.heat) : "—"}</p><p className="mt-1 text-xs text-muted-foreground">{item.samples ? `${item.samples} 条样本` : item.status}</p></div>)}
-          </CardContent>
-        </Card>
-      )}
-    </section>
-  );
-}
-
-function EmptySummary({ text: message }: { text: string }) {
-  return <div className="flex min-h-32 items-center justify-center px-6 py-10 text-center text-sm leading-6 text-muted-foreground">{message}</div>;
 }
 
 function Metric({
@@ -2803,18 +2666,18 @@ function MarketViewTabs({
   }[] = [
     {
       value: "overview",
-      label: "市场总览",
-      description: "结论、机会与行动",
+      label: "监测结论",
+      description: "事实、判断与下一步",
     },
     {
       value: "analysis",
-      label: "市场洞察",
+      label: "榜单与趋势",
       description: "题材、作品、素材、平台与趋势",
     },
     {
       value: "data",
-      label: "数据管理",
-      description: "数据源、口径与质量",
+      label: "数据采集",
+      description: "来源、上传与数据校验",
     },
   ];
   return (
@@ -3375,178 +3238,6 @@ function Empty({ message }: { message: string }) {
     </div>
   );
 }
-function MarketConclusions({ dashboard, period, periodCount, periodKind }: { dashboard: Dashboard; period: string; periodCount: number; periodKind: PeriodKind }) {
-  const leadGenre = dashboard.sharedGenres[0] || dashboard.genres[0];
-  const secondGenre = dashboard.sharedGenres[1] || dashboard.genres[1];
-  const leadPair = dashboard.genrePairs[0];
-  const leadOpportunity = dashboard.opportunities[0];
-  const leadPlatform = dashboard.platforms[0];
-  const samples = [
-    ...new Map(
-      dashboard.overlapWorks.map((item) => [item.titleKey, item]),
-    ).values(),
-  ].slice(0, 3);
-  const signalLabels = dashboard.datasets
-    .map((item) => item.signal)
-    .filter((item, index, values) => values.indexOf(item) === index);
-  return (
-    <Card className="overflow-hidden border-[#b6ce92] bg-[linear-gradient(115deg,#eff6e5_0%,#fbfcf8_48%,#eef4ea_100%)]">
-      <CardHeader className="border-b border-[#d7e4c8]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="section-kicker text-[#4f7138]">
-              Decision brief · data to development
-            </p>
-            <CardTitle className="mt-1 text-xl text-[#173f31]">
-              重点结论与选题动作
-            </CardTitle>
-            <p className="mt-1 text-sm text-[#4b6657]">
-              只保留能直接影响选题判断的三条信息。
-            </p>
-          </div>
-          <div className="flex gap-1">
-            {signalLabels.map((label) => (
-              <Badge
-                key={label}
-                variant="outline"
-                className="border-[#a8c77d] bg-white/65 text-[#315f4a]"
-              >
-                {label}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="grid gap-4 p-5 lg:grid-cols-3">
-        <Conclusion title="当前题材主信号" index="01">
-          <p>{leadGenre ? <><strong>{leadGenre.name}</strong> 在已导入样本中的标签出现次数最多（{leadGenre.value.toLocaleString()}次）{secondGenre ? `，其次是${secondGenre.name}` : ""}；样本关联最多的平台为 <strong>{leadPlatform?.name || "待识别"}</strong>。</> : "当前数据不足，暂不形成题材结论。"}</p>
-        </Conclusion>
-        <Conclusion title="优先拆哪一部" index="02">
-          <p>{leadOpportunity ? <><strong>{leadOpportunity.titleCn || leadOpportunity.title}</strong> 是当前优先样本：{leadOpportunity.quadrant}，机会指数 {leadOpportunity.score}。只拆人物关系、前三集承诺和素材钩子。</> : `当前${dashboard.overlapCount}部双信号作品不足以形成明确优先级，先补播放或投放侧数据。`}</p>
-        </Conclusion>
-        <Conclusion title="内容部验证建议" index="03">
-          <p>{leadPair ? <>围绕 <strong>{leadPair.name}</strong> 组合产出3个不同关系切口；每个切口只验证“高概念一句话 + 首集危机 + 第三集卡点”。</> : "从第一题材中提出3个具体人物关系，不直接使用大类标签作为选题。"}</p>
-          <p className="mt-2 text-xs text-[#6b8074]">口径：{period} · {periodCount}个{periodKind === "day" ? "日榜" : periodKind === "week" ? "周榜" : "月榜"}周期；曝光与播放不相加。</p>
-        </Conclusion>
-      </CardContent>
-      {samples.length > 0 && (
-        <div className="border-t border-[#d7e4c8] bg-white/45 px-5 py-4">
-          <p className="text-xs font-semibold text-[#315f4a]">
-            投放与播放双信号作品样本
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {samples.map((work) => (
-              <span
-                key={work.titleKey}
-                className="rounded-full border border-[#c7dbac] bg-white px-3 py-1.5 text-xs text-[#315f4a]"
-              >
-                <strong>{work.titleCn || work.title}</strong>
-                {work.titleCn && (
-                  <span className="ml-1 text-[#68816f]">({work.title})</span>
-                )}
-                <span className="ml-1 text-[#68816f]">{work.genre}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-    </Card>
-  );
-}
-function Conclusion({
-  index,
-  title,
-  children,
-}: {
-  index: string;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-2xl border border-[#d7e4c8] bg-white/70 p-4 text-sm leading-6 text-[#365347]">
-      <p className="text-[11px] font-bold tracking-[.14em] text-[#759950]">
-        {index}
-      </p>
-      <h3 className="mt-1 font-semibold text-[#173f31]">{title}</h3>
-      <div className="mt-2">{children}</div>
-    </div>
-  );
-}
-function ExecutiveCharts({ dashboard }: { dashboard: Dashboard }) {
-  const genreData = dashboard.genres.slice(0, 8);
-  const platformData = [...dashboard.platformBoards].sort((a, b) => b.heat - a.heat).slice(0, 12);
-
-  const chartCard =
-    "overflow-hidden border-[#d7e4c8] bg-[linear-gradient(145deg,#ffffff_0%,#f6f9f2_100%)]";
-  const tooltipStyle = {
-    borderRadius: 12,
-    border: "1px solid #d7e4c8",
-    boxShadow: "0 12px 30px rgba(23,63,49,.12)",
-    fontSize: 12,
-  };
-
-  return (
-    <section aria-labelledby="executive-charts-title" className="space-y-3">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="section-kicker">Visual market brief</p>
-          <h2 id="executive-charts-title" className="mt-1 text-lg font-semibold text-[#173f31]">
-            市场结构图表
-          </h2>
-        </div>
-        <p className="max-w-xl text-xs leading-5 text-muted-foreground">
-          总览只保留题材和平台两项核心结构；详细判断进入“市场洞察”。
-        </p>
-      </div>
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card className={chartCard}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">AI样本题材出现频次 Top 8</CardTitle>
-            <p className="text-xs text-muted-foreground">按跨榜单去重后的AI作品数统计；一部作品可带多个题材，此数值不代表题材市场份额或增长率。</p>
-          </CardHeader>
-          <CardContent>
-            <div className="h-72">
-              {genreData.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={genreData} layout="vertical" margin={{ top: 4, right: 24, left: 4, bottom: 4 }}>
-                  <CartesianGrid horizontal={false} stroke="#e2eadb" strokeDasharray="3 3" />
-                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "#668074" }} />
-                  <YAxis dataKey="name" type="category" width={76} tick={{ fontSize: 11, fill: "#294d3e" }} />
-                  <Tooltip contentStyle={tooltipStyle} formatter={(value) => [`${value} 条`, "样本次数"]} />
-                  <Bar dataKey="value" fill="#315f4a" radius={[0, 7, 7, 0]} barSize={18} />
-                </BarChart>
-              </ResponsiveContainer>
-              ) : <Empty message="当前榜单没有识别到AI仿真人题材样本；请检查题材字段或AI仿真人标签。" />}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className={chartCard}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">12个平台播放增量</CardTitle>
-            <p className="text-xs text-muted-foreground">按各平台榜中的AI仿真人作品播放增量统计；平台间同一作品会分别保留，不代表全市场份额。</p>
-          </CardHeader>
-          <CardContent>
-            <div className="h-72">
-              {platformData.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={platformData} layout="vertical" margin={{ top: 4, right: 24, left: 4, bottom: 4 }}>
-                  <CartesianGrid vertical={false} stroke="#e2eadb" strokeDasharray="3 3" />
-                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: "#668074" }} />
-                  <YAxis dataKey="name" type="category" width={92} tick={{ fontSize: 10, fill: "#294d3e" }} />
-                  <Tooltip contentStyle={tooltipStyle} formatter={(value) => [`${short(Number(value) || 0)}`, "播放增量"]} />
-                  <Bar dataKey="heat" fill="#7aa34d" radius={[0, 7, 7, 0]} barSize={18} />
-                </BarChart>
-              </ResponsiveContainer>
-              ) : <Empty message="12个平台榜尚未导入，因此暂不展示平台播放增量分布。" />}
-            </div>
-          </CardContent>
-        </Card>
-
-      </div>
-    </section>
-  );
-}
 function OpportunityBoard({
   dashboard,
   savedTitles,
@@ -3716,25 +3407,6 @@ function OpportunityBoard({
         </CardContent>
       </Card>
     </div>
-  );
-}
-function TrendSnapshot({ trend, onOpen }: { trend: TrendAnalysis; onOpen: () => void }) {
-  const rising = trend.genres.filter((item) => item.change > 0).slice(0, 3);
-  const falling = trend.genres.filter((item) => item.change < 0).slice(0, 3);
-  return (
-    <Card className="border-[#d7e4c8] bg-[#f7f9f3]">
-      <CardContent className="flex flex-wrap items-center gap-4 p-4">
-        <div className="min-w-[190px]">
-          <p className="text-xs font-semibold tracking-[.14em] text-[#759950]">趋势快照</p>
-          <p className="mt-1 text-sm font-semibold text-[#173f31]">{trend.currentPeriod} 对比 {trend.previousPeriod || "上一周期"}</p>
-        </div>
-        <div className="flex min-w-[220px] flex-1 flex-wrap gap-2">
-          {!trend.comparable ? <span className="text-xs text-muted-foreground">两期榜单构成不同，暂不做环比判断</span> : rising.length ? rising.map((item) => <Badge key={item.name} className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">↑ {item.name} +{item.change}</Badge>) : <span className="text-xs text-muted-foreground">暂无明确上升题材</span>}
-          {falling.map((item) => <Badge key={item.name} variant="outline" className="border-amber-200 text-amber-800">↓ {item.name} {item.change}</Badge>)}
-        </div>
-        <Button size="sm" variant="outline" onClick={onOpen}>查看完整趋势</Button>
-      </CardContent>
-    </Card>
   );
 }
 function TrendPanel({ trend }: { trend: TrendAnalysis }) {
