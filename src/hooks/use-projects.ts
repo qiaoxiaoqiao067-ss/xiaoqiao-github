@@ -2,20 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react"
 
-export const PROJECT_STAGES = ["拟购买/合同审批", "正式推进", "剧本修改", "剧本定稿", "双语稿确认", "围读", "制作交接", "完成归档"] as const
-const LEGACY_PROJECT_STAGE_MAP: Record<string, (typeof PROJECT_STAGES)[number]> = {
-  "拟购买": "拟购买/合同审批",
-  "合同审批": "拟购买/合同审批",
-  "立项选题": "正式推进",
-  "开发立项": "正式推进",
-  "分集与剧本": "剧本修改",
-  "中文稿修改": "剧本修改",
-  "剧本开发": "剧本修改",
-  "本地化交付": "双语稿确认",
-  "英语本地化": "双语稿确认",
-  "双语稿": "双语稿确认",
-  "已完成": "完成归档",
-}
+export { PROJECT_STAGES } from "@/lib/projects/stages"
+import { normalizeProjectWorkflow } from "@/lib/projects/stages"
 export type ProjectStatus = "active" | "deferred" | "paused" | "completed" | "archived"
 export type Project = {
   id: string; user_id: string; content_id: string | null; linked_idea_id: string | null; title: string; market: string | null; genre: string | null
@@ -24,7 +12,7 @@ export type Project = {
   risk: string | null; notes: string | null; created_at: string; updated_at: string
 }
 export type ProjectInput = Pick<Project, "title"> & Partial<Pick<Project, "market" | "genre" | "stage" | "progress" | "status" | "next_action" | "due_date" | "risk" | "notes" | "content_id" | "linked_idea_id">>
-const normalizeProject = (project: Project): Project => ({ ...project, stage: LEGACY_PROJECT_STAGE_MAP[project.stage] || project.stage })
+const normalizeProject = (project: Project): Project => normalizeProjectWorkflow(project)
 
 export function useProjects() {
   const [projects, setProjects] = useState<Project[]>([])

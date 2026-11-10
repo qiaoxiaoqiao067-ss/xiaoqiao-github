@@ -4,6 +4,8 @@ import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
 import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
 
+import { normalizeProjectStage, normalizeProjectWorkflow, projectStageProgress } from "@/lib/projects/stages"
+
 export const dynamic = "force-dynamic"
 
 const projectSchema = z.object({
@@ -20,7 +22,7 @@ export async function GET() {
   if (!access) return NextResponse.json({ error: "没有项目推进查看权限" }, { status: 403 })
   const { data, error } = await serviceClient.from("projects").select("*").eq("user_id", access.ownerId).order("updated_at", { ascending: false })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ projects: data || [] }, { headers: { "Cache-Control": "no-store" } })
+  return NextResponse.json({ projects: (data || []).map(normalizeProjectWorkflow) }, { headers: { "Cache-Control": "no-store" } })
 }
 
 export async function POST(request: NextRequest) {
@@ -28,8 +30,8 @@ export async function POST(request: NextRequest) {
   const access = await requireWorkspaceAccess(user.id, "projects", "edit"); if (!access) return NextResponse.json({ error: "没有项目推进编辑权限" }, { status: 403 })
   const parsed = projectSchema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return NextResponse.json({ error: "项目数据不完整" }, { status: 400 })
   const { data: latest } = await serviceClient.from("projects").select("project_no").eq("user_id", access.ownerId).order("project_no", { ascending: false }).limit(1).maybeSingle()
-  const { data, error } = await serviceClient.from("projects").insert({ ...parsed.data, user_id: access.ownerId, project_no: Number(latest?.project_no || 0) + 1 }).select().single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 }); return NextResponse.json({ project: data }, { status: 201 })
+  const { data, error } = await serviceClient.from("projects").insert({ ...parsed.data, stage: normalizeProjectStage(parsed.data.stage), progress: projectStageProgress(parsed.data.stage), user_id: access.ownerId, project_no: Number(latest?.project_no || 0) + 1 }).select().single()
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 }); return NextResponse.json({ project: normalizeProjectWorkflow(data) }, { status: 201 })
 }
 
 export async function PATCH(request: NextRequest) {
@@ -39,8 +41,14 @@ export async function PATCH(request: NextRequest) {
   if (!id.success || !parsed.success) return NextResponse.json({ error: "项目数据无效" }, { status: 400 })
   const { id: _ignored, ...updates } = body as Record<string, unknown>; void _ignored
   const safe = projectSchema.partial().parse(updates)
+  // Stage is the sole source of progress; ignore legacy manual percentages.
+  delete safe.progress
+  if (safe.stage !== undefined) {
+    safe.stage = normalizeProjectStage(safe.stage)
+    safe.progress = projectStageProgress(safe.stage)
+  }
   const { data, error } = await serviceClient.from("projects").update({ ...safe, updated_at: new Date().toISOString() }).eq("id", id.data).eq("user_id", access.ownerId).select().single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 }); return NextResponse.json({ project: data })
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 }); return NextResponse.json({ project: normalizeProjectWorkflow(data) })
 }
 
 export async function DELETE(request: NextRequest) {
