@@ -2,16 +2,10 @@
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { AppLayout } from "@/components/layout/app-layout";
+import { BoardComparisons } from "@/components/market/board-comparisons";
+import { BoardPlatforms } from "@/components/market/board-platforms";
+import { boardSamples, compareBoards } from "@/lib/market/board-analysis";
 import { MonitorOverview } from "@/components/market/monitor-overview";
 import { sampleMarketRows, latestBoardImports, marketBoardKey } from "@/lib/market/monitoring-policy";
 import { PageHero } from "@/components/layout/page-hero";
@@ -90,6 +84,7 @@ type Dataset = {
   period: string;
   rows: number;
   aiRows: number;
+  sampledRows: number;
   works: number;
   heat: number | null;
   signal: string;
@@ -125,21 +120,6 @@ type Dashboard = {
   singleSourceGenres: Bucket[];
   overlapWorks: Work[];
   overlapCount: number;
-};
-type TrendRow = { name: string; current: number; previous: number; change: number; streak: number };
-type WorkTrendRow = { title: string; titleCn: string; currentRank: number | null; previousRank: number | null; movement: number; streak: number };
-type TrendAnalysis = {
-  currentPeriod: string;
-  previousPeriod: string;
-  comparable: boolean;
-  periodCount: number;
-  currentIndex: number;
-  genres: TrendRow[];
-  platforms: TrendRow[];
-  works: WorkTrendRow[];
-  newGenres: string[];
-  fadingGenres: string[];
-  periodKind: PeriodKind;
 };
 type ProductionAssessment = {
   score: number;
@@ -388,75 +368,6 @@ function detectPeriodLabel(fileName: string, sheetNames: string[], rows: Record<
   }
   return "";
 }
-function buildTrendAnalysis(periods: string[], dashboards: Map<string, Dashboard>, selectedPeriod: string): TrendAnalysis {
-  const periodKind = periodKindFor(selectedPeriod);
-  const ordered = periods.filter((item) => periodKindFor(item) === periodKind).sort((a, b) => periodNumber(a) - periodNumber(b) || a.localeCompare(b, "zh-CN"));
-  const selectedIndex = ordered.indexOf(selectedPeriod);
-  const currentIndex = selectedIndex >= 0 ? selectedIndex : ordered.length - 1;
-  const currentPeriod = ordered[currentIndex] || selectedPeriod;
-  const previousPeriod = currentIndex > 0 ? ordered[currentIndex - 1] : "";
-  const current = dashboards.get(currentPeriod);
-  const previous = dashboards.get(previousPeriod);
-  const profileFor = (dashboard?: Dashboard) =>
-    (dashboard?.datasets || []).map((item) => `${item.boardKey}:${item.signal}:${item.aiRows}`).sort().join("|");
-  const comparable = Boolean(previous && current && profileFor(current) === profileFor(previous));
-  const streakFor = (name: string, pick: (dashboard: Dashboard) => Bucket[]) => {
-    let streak = 0;
-    for (let index = currentIndex; index >= 0; index -= 1) {
-      const data = dashboards.get(ordered[index]);
-      if (!data || !pick(data).some((item) => item.name === name)) break;
-      streak += 1;
-    }
-    return streak;
-  };
-  const compareBuckets = (currentRows: Bucket[] = [], previousRows: Bucket[] = [], pick: (dashboard: Dashboard) => Bucket[]) => {
-    const previousMap = new Map(previousRows.map((item) => [item.name, item.value]));
-    return currentRows.map((item) => ({
-      name: item.name,
-      current: item.value,
-      previous: previousMap.get(item.name) || 0,
-      change: previousMap.has(item.name) ? item.value - (previousMap.get(item.name) || 0) : item.value,
-      streak: streakFor(item.name, pick),
-    })).sort((a, b) => b.change - a.change || b.current - a.current);
-  };
-  const currentGenres = current?.genres || [];
-  const previousGenres = previous?.genres || [];
-  const previousGenreNames = new Set(previousGenres.map((item) => item.name));
-  const currentGenreNames = new Set(currentGenres.map((item) => item.name));
-  const workKey = (item: Work) => `${item.boardKey}:${item.titleKey}`;
-  const previousWorks = new Map((previous?.works || []).map((item) => [workKey(item), item]));
-  const works = [...new Map((current?.works || []).map((item) => [workKey(item), item])).values()]
-    .filter((item) => previousWorks.has(workKey(item)))
-    .map((item) => {
-      const prior = previousWorks.get(workKey(item));
-      const currentRank = item.rank;
-      const previousRank = prior?.rank ?? null;
-      let streak = 0;
-      for (let index = currentIndex; index >= 0; index -= 1) {
-        const data = dashboards.get(ordered[index]);
-        if (!data?.works.some((work) => workKey(work) === workKey(item))) break;
-        streak += 1;
-      }
-      const sourceLabel = item.signal === "tk" ? "TikTok榜" : item.signal === "ad" ? "投放榜" : `${item.platform}榜`;
-      return { title: `${item.title} · ${sourceLabel}`, titleCn: item.titleCn ? `${item.titleCn} · ${sourceLabel}` : "", currentRank, previousRank, movement: currentRank !== null && previousRank !== null ? previousRank - currentRank : 0, streak };
-    })
-    .sort((a, b) => b.movement - a.movement || b.streak - a.streak)
-    .slice(0, 8);
-  return {
-    currentPeriod,
-    previousPeriod,
-    comparable,
-    periodCount: Math.max(0, currentIndex + 1),
-    currentIndex,
-    genres: comparable ? compareBuckets(currentGenres, previousGenres, (dashboard) => dashboard.genres) : [],
-    platforms: comparable ? compareBuckets(current?.platformBoards, previous?.platformBoards, (dashboard) => dashboard.platformBoards) : [],
-    works: comparable ? works : [],
-    newGenres: comparable ? currentGenres.filter((item) => !previousGenreNames.has(item.name)).map((item) => item.name) : [],
-    fadingGenres: comparable ? previousGenres.filter((item) => !currentGenreNames.has(item.name)).map((item) => item.name) : [],
-    periodKind,
-  };
-}
-
 function analyze(
   imports: MarketDataImport[],
   chineseNameMap: Record<string, string> = {},
@@ -490,18 +401,13 @@ function analyze(
     map.set(name, value);
   };
   for (const source of marketImports) {
-    const signal = signalFor(source.columns),
+    const signal = signalForFile(source.file_name, source.columns),
       seen = new Set<string>();
     let sumHeat = 0;
     let hasHeat = false;
     let aiRows = 0;
     let rowOrdinal = 0;
-    const eligibleRows = (source.raw_rows || []).filter(row => {
-      const genreKey = mappedKeyFor(row, GENRE, fieldRoleMap, "genre");
-      const titleKey = mappedKeyFor(row, TITLE, fieldRoleMap, "title");
-      return Boolean(titleKey && text(row[titleKey]) && genreKey && text(row[genreKey]).split(/[、,，/]/).map(tag => tag.trim()).includes("AI仿真人"));
-    });
-    const sampledRows = sampleMarketRows(eligibleRows, periodKindFor(source.period_label || ""), row => {
+    const sampledRows = sampleMarketRows(source.raw_rows || [], periodKindFor(source.period_label || ""), row => {
       const rankKey = mappedKeyFor(row, RANK, fieldRoleMap, "rank");
       return rankKey ? numeric(row[rankKey]) : null;
     });
@@ -512,7 +418,7 @@ function analyze(
         genreKey = mappedKeyFor(row, GENRE, fieldRoleMap, "genre"),
         platformKeys = mappedKeysFor(row, PLATFORM, fieldRoleMap, "platform"),
         rankKey = mappedKeyFor(row, RANK, fieldRoleMap, "rank"),
-        heatKey = mappedKeyFor(row, HEAT, fieldRoleMap, "heat");
+        heatKey = signal === "tk" || signal === "platform" ? keyFor(row, /^播放增量$/) : signal === "ad" ? keyFor(row, /^预估曝光$/) : undefined;
       [titleKey, titleCnKey, genreKey, ...platformKeys, rankKey, heatKey]
         .filter(Boolean)
         .forEach((key) => fields.add(key as string));
@@ -631,6 +537,7 @@ function analyze(
       period: source.period_label || "未标记统计期",
       rows: source.row_count,
       aiRows,
+      sampledRows: sampledRows.length,
       works: seen.size,
       heat: hasHeat ? sumHeat : null,
       signal:
@@ -904,17 +811,12 @@ export default function MarketDataPage() {
       fieldRoleMap,
     ],
   );
-  const periodDashboards = useMemo(() => {
-    const result = new Map<string, Dashboard>();
-    periodOptions.forEach((option) => {
-      result.set(option, analyze(activeImportsForPeriod(imports, option), syncedChineseNameMap, titleAliasMap, platformAliasMap, genreAliasMap, fieldRoleMap));
-    });
-    return result;
-  }, [imports, periodOptions, syncedChineseNameMap, titleAliasMap, platformAliasMap, genreAliasMap, fieldRoleMap]);
-  const trendAnalysis = useMemo(
-    () => buildTrendAnalysis(periodOptions, periodDashboards, period),
-    [periodOptions, periodDashboards, period],
-  );
+  const [comparisonChoice, setComparisonChoice] = useState("");
+  const comparablePeriods = periodOptions.filter(p => periodKindFor(p) === periodKindFor(period) && p !== period);
+  const previousPeriod = comparablePeriods.includes(comparisonChoice) ? comparisonChoice : comparablePeriods.filter(p => periodNumber(p) < periodNumber(period)).sort(comparePeriods)[0] || "";
+  const currentBoards = useMemo(() => boardSamples(periodImports.filter(isMarketImport), periodKindFor(period)), [periodImports, period]);
+  const previousBoards = boardSamples(activeImportsForPeriod(imports, previousPeriod).filter(isMarketImport), periodKindFor(period));
+  const boardComparisons = compareBoards(currentBoards, previousBoards);
   const periodGroups = useMemo(
     () => ({
       month: periodOptions.filter((item) => periodKindFor(item) === "month").sort(comparePeriods),
@@ -1681,13 +1583,21 @@ export default function MarketDataPage() {
         />
         <MarketViewTabs activeView={activeView} onChange={setActiveView} />
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#d7e4c8] bg-white p-4">
-          <div><p className="text-sm font-semibold text-[#173f31]">每来源 · 每榜单：日50 / 周300 / 月500</p><p className="mt-1 text-xs text-muted-foreground">当前已配置短剧榜、TikTok榜与平台榜；AI仿真人样本单独分析。</p></div>
+          <div><p className="text-sm font-semibold text-[#173f31]">每来源 · 每榜单：日50 / 周300 / 月500</p><p className="mt-1 text-xs text-muted-foreground">按原榜排名先取TopN，再分析其中AI仿真人条目；不会向榜外补足AI数量。</p></div>
           <label className="flex items-center gap-2 text-xs text-[#61766b]">统计期
             <select aria-label="监测统计期" value={periodOptions.includes(period) ? period : ""} onChange={(event) => setPeriod(event.target.value)} className="h-9 max-w-full rounded-lg border border-[#c8d9bc] bg-white px-3 text-sm text-[#173f31]">
               <option value="" disabled>暂无已导入周期</option>
               {periodOptions.filter(option => periodKindFor(option) === periodKindFor(period)).map(option => <option key={option} value={option}>{option}</option>)}
             </select>
           </label>
+        </div>
+        <div className="rounded-2xl border border-[#d7e4c8] bg-white p-4 text-xs">
+          <label className="flex flex-wrap items-center gap-2">对比统计期
+            <select aria-label="对比统计期" value={previousPeriod} onChange={e=>setComparisonChoice(e.target.value)} className="max-w-full rounded-lg border border-[#c8d9bc] bg-white p-2"><option value="">暂无对比期</option>{comparablePeriods.map(p=><option key={p} value={p}>{p}</option>)}</select>
+            <span>{boardComparisons.filter(c=>!c.reason).length}个榜单可独立比较 · 原始快照口径待核验</span>
+            <Button size="sm" variant="ghost" onClick={()=>{setActiveView("analysis");setAnalysisMode("trends")}}>查看分榜比较</Button>
+          </label>
+          <details className="mt-3"><summary className="cursor-pointer font-medium text-[#315f4a]">查看采样范围与数据质量</summary><p className="mt-2 leading-6">旧版先筛AI再取TopN；现在先取原榜TopN，AI数量下降可能来自取样修正，不代表市场回落。榜单排名、播放和素材分别解释，海外榜不直接代表北美。</p>{currentBoards.map(b=><div key={b.key} className="mt-2 border-t pt-2"><p className="break-all">{b.name}：原榜{b.rows.length}条，其中AI {b.ai.length}条；指标：{b.metric||'未识别'}</p>{b.issues.map((issue,i)=><p key={i} className="mt-1 text-amber-800">{issue}</p>)}</div>)}</details>
         </div>
         {activeView === "data" && <>
         <section className="overflow-hidden rounded-2xl border border-[#cfe0bf] bg-gradient-to-br from-[#f7fbef] via-white to-[#eef7e7] shadow-[0_16px_40px_rgba(23,63,49,0.07)]">
@@ -1966,7 +1876,7 @@ export default function MarketDataPage() {
             </Button>
           </div>
         )}
-        {activeView === "overview" && <MonitorOverview data={dashboard} trend={trendAnalysis} kind={periodKindFor(period)} period={period} loading={loading} onCollect={() => setActiveView("data")} onInspect={(mode) => { setActiveView("analysis"); setAnalysisMode(mode); }} />}
+        {activeView === "overview" && <MonitorOverview data={dashboard} comparisons={boardComparisons} kind={periodKindFor(period)} period={period} loading={loading} onCollect={() => setActiveView("data")} onInspect={(mode) => { setActiveView("analysis"); setAnalysisMode(mode); }} />}
         {activeView === "analysis" && (
           <div className="space-y-6">
         <AnalysisModeTabs activeMode={analysisMode} onChange={setAnalysisMode} />
@@ -2200,13 +2110,13 @@ export default function MarketDataPage() {
           <div className="space-y-4">
             <div className="grid gap-4 xl:grid-cols-2">
               <ChartCard
-                title="投放榜题材热度"
+                title="投放榜题材作品数"
                 icon={Layers3}
                 data={dashboard.adGenres}
                 empty="导入广告投放榜后显示题材分布。"
               />
               <ChartCard
-                title="TikTok播放题材热度"
+                title="TikTok榜题材作品数"
                 icon={Layers3}
                 data={dashboard.tkGenres}
                 empty="导入TikTok热播榜后显示题材分布。"
@@ -2222,19 +2132,19 @@ export default function MarketDataPage() {
           <div className="space-y-4">
             <div className="grid gap-4 xl:grid-cols-2">
               <ChartCard
-                title="短剧平台投放覆盖"
+                title="投放样本中平台关联记录数"
                 icon={BarChart3}
                 data={dashboard.adPlatforms}
                 empty="导入广告投放榜后显示平台覆盖。"
               />
               <ChartCard
-                title="TikTok剧场号覆盖"
+                title="TikTok样本中剧场号记录数"
                 icon={BarChart3}
                 data={dashboard.tkChannels}
                 empty="导入TikTok热播榜后显示剧场号覆盖。"
               />
             </div>
-            <PlatformComparison dashboard={dashboard} previousDashboard={trendAnalysis.comparable ? periodDashboards.get(trendAnalysis.previousPeriod) : undefined} />
+            <BoardPlatforms samples={currentBoards} />
             <MarketCoverageNote />
           </div>
         )}
@@ -2250,7 +2160,7 @@ export default function MarketDataPage() {
             <ProductionAssessmentPanel dashboard={dashboard} />
           </div>
         )}
-        {analysisMode === "trends" && <TrendPanel trend={trendAnalysis} />}
+        {analysisMode === "trends" && <BoardComparisons comparisons={boardComparisons} current={period} previous={previousPeriod} />}
         {analysisMode === "external" && (
           <ExternalSignalsPanel signals={externalSignals} source={externalSource} uploading={uploadingExternal} fileRef={externalSignalFileRef} onSourceChange={setExternalSource} onImport={importExternalSignals} onDownloadTemplate={downloadExternalSignalTemplate} />
         )}
@@ -2895,53 +2805,6 @@ function ProductionAssessmentPanel({ dashboard }: { dashboard: Dashboard }) {
 function RiskBadge({ value }: { value: "低" | "中" | "高" }) { return <Badge variant={value === "高" ? "destructive" : value === "中" ? "secondary" : "outline"}>{value}</Badge>; }
 function ReuseBadge({ value }: { value: "低" | "中" | "高" }) { return <Badge variant={value === "高" ? "default" : value === "中" ? "secondary" : "outline"}>{value}</Badge>; }
 function RuleLine({ title, text }: { title: string; text: string }) { return <div><p className="font-semibold text-foreground">{title}</p><p>{text}</p></div>; }
-function PlatformComparison({ dashboard, previousDashboard }: { dashboard: Dashboard; previousDashboard?: Dashboard }) {
-  const uniqueWorks = (works: Work[]) => [...new Map(works.map((item) => [item.titleKey, item])).values()];
-  const platformWorks = dashboard.works.filter((item) => item.signal === "platform");
-  const tkKeys = new Set(dashboard.works.filter((item) => item.signal === "tk").map((item) => item.titleKey));
-  const previousPlatformWorks = (previousDashboard?.works || []).filter((item) => item.signal === "platform");
-  const totalPlays = platformWorks.reduce((sum, item) => sum + (item.heat || 0), 0);
-  const previousTotalPlays = previousPlatformWorks.reduce((sum, item) => sum + (item.heat || 0), 0);
-  const profiles = CORE_PLATFORMS.map((platform) => {
-    const works = uniqueWorks(platformWorks.filter((item) => item.platforms.includes(platform)));
-    const previousWorks = uniqueWorks(previousPlatformWorks.filter((item) => item.platforms.includes(platform)));
-    const genreCounts = new Map<string, number>();
-    works.forEach((work) => work.genre.split(/[、,，/]/).map((item) => item.trim()).filter((item) => item && !GENERIC_TAGS.has(item)).forEach((genre) => genreCounts.set(genre, (genreCounts.get(genre) || 0) + 1)));
-    const topGenres = [...genreCounts].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name]) => name);
-    const plays = works.reduce((sum, item) => sum + (item.heat || 0), 0);
-    const previousPlays = previousWorks.reduce((sum, item) => sum + (item.heat || 0), 0);
-    const topWork = [...works].sort((a, b) => (b.heat || 0) - (a.heat || 0))[0];
-    const share = totalPlays ? (plays / totalPlays) * 100 : 0;
-    const previousShare = previousTotalPlays ? (previousPlays / previousTotalPlays) * 100 : 0;
-    return { platform, works: works.length, share, shareChange: share - previousShare, validated: works.filter((item) => tkKeys.has(item.titleKey)).length, topGenres, topWork, heat: plays };
-  }).sort((a, b) => b.heat - a.heat || b.works - a.works);
-  const covered = profiles.filter((item) => item.works > 0);
-  const totalAssignments = profiles.reduce((sum, item) => sum + item.heat, 0);
-  const topThreeShare = totalAssignments ? (profiles.slice(0, 3).reduce((sum, item) => sum + item.heat, 0) / totalAssignments) * 100 : 0;
-  const totalValidated = profiles.reduce((sum, item) => sum + item.validated, 0);
-  return (
-    <section aria-labelledby="platform-comparison-title" className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div><p className="section-kicker">12 PLATFORM PLAY GROWTH</p><h3 id="platform-comparison-title" className="mt-1 text-lg font-semibold">12个平台播放增量对比</h3><p className="mt-1 text-xs text-muted-foreground">平台归属由平台榜文件名确定；份额按12个平台榜记录中的播放增量计算，同名跨平台作品不合并。</p></div>
-        <Badge variant="outline">北美优先 · 海外覆盖</Badge>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Metric label="本期覆盖平台" value={`${covered.length} / ${CORE_PLATFORMS.length}`} note="12个平台榜中有AI样本的平台" />
-        <Metric label="前三平台播放占比" value={`${topThreeShare.toFixed(1)}%`} note="前三个平台播放增量之和 / 12平台合计" />
-        <Metric label="TikTok同名验证" value={totalValidated.toLocaleString()} note="严格同名同时进入平台榜与TikTok热播榜" />
-      </div>
-      <Card>
-        <CardContent className="overflow-x-auto p-5">
-          <table className="min-w-[980px] w-full text-left text-sm">
-            <thead><tr className="border-b text-xs text-muted-foreground"><th className="pb-3 font-medium">平台</th><th className="pb-3 text-right font-medium">AI作品数</th><th className="pb-3 text-right font-medium">播放增量占比</th><th className="pb-3 text-right font-medium">环比</th><th className="pb-3 text-right font-medium">TikTok同名</th><th className="pb-3 pl-5 font-medium">题材偏好</th><th className="pb-3 pl-5 font-medium">头部作品</th></tr></thead>
-            <tbody>{profiles.map((item) => <tr key={item.platform} className="border-b last:border-0"><td className="py-3 font-semibold">{item.platform}</td><td className="py-3 text-right">{item.works}</td><td className="py-3 text-right">{item.share.toFixed(1)}%</td><td className={`py-3 text-right font-medium ${item.shareChange > 0 ? "text-emerald-700" : item.shareChange < 0 ? "text-amber-700" : "text-muted-foreground"}`}>{previousDashboard ? `${item.shareChange > 0 ? "+" : ""}${item.shareChange.toFixed(1)}pp` : "—"}</td><td className="py-3 text-right">{item.validated}</td><td className="py-3 pl-5"><div className="flex flex-wrap gap-1">{item.topGenres.length ? item.topGenres.map((genre) => <Badge key={genre} variant="outline" className="text-[10px]">{genre}</Badge>) : <span className="text-xs text-muted-foreground">暂无样本</span>}</div></td><td className="max-w-[240px] truncate py-3 pl-5" title={item.topWork?.title}>{item.topWork ? item.topWork.titleCn || item.topWork.title : "—"}</td></tr>)}</tbody>
-          </table>
-        </CardContent>
-      </Card>
-      <p className="text-xs leading-5 text-muted-foreground">榜单提供平台播放增量，不等于全市场用户份额；仅在同一口径月榜之间计算环比。</p>
-    </section>
-  );
-}
 function MarketCoverageNote() {
   return (
     <Card className="border-[#d7e4c8] bg-[#f7f9f3]">
@@ -3409,81 +3272,6 @@ function OpportunityBoard({
     </div>
   );
 }
-function TrendPanel({ trend }: { trend: TrendAnalysis }) {
-  const unit = trend.periodKind === "week" ? "周" : "月";
-  if (!trend.previousPeriod || !trend.comparable) {
-    return (
-      <Card className="border-dashed">
-        <CardContent className="flex flex-wrap items-center justify-between gap-3 p-5">
-          <div>
-            <p className="section-kicker">Cross-month trend</p>
-            <p className="mt-1 font-semibold">连续月份趋势</p>
-            <p className="mt-1 text-sm text-muted-foreground">{!trend.previousPeriod ? `当前只有 ${trend.currentPeriod || "一个统计期"}` : `${trend.currentPeriod} 与 ${trend.previousPeriod} 的榜单构成不同`}，暂不计算环比、连续上榜或题材动量。</p>
-          </div>
-          <Badge variant="outline">{!trend.previousPeriod ? `还需至少 1 个${unit}榜周期形成环比` : "补齐同构成榜单后再比较"}</Badge>
-        </CardContent>
-      </Card>
-    );
-  }
-  const level = trend.periodCount >= 3 ? "短期趋势" : "环比观察";
-  const rising = trend.genres.filter((item) => item.change > 0).slice(0, 5);
-  const declining = [...trend.genres].filter((item) => item.change < 0).sort((a, b) => a.change - b.change).slice(0, 5);
-  const burst = trend.genres.filter((item) => item.streak === 1 && item.change > 0).slice(0, 4);
-  const sustained = trend.genres.filter((item) => item.streak >= 3 && item.change > 0).slice(0, 4);
-  const stable = trend.genres.filter((item) => item.streak >= 2 && Math.abs(item.change) <= Math.max(1, item.current * 0.1)).slice(0, 4);
-  const cooling = trend.genres.filter((item) => item.change < 0).slice(0, 4);
-  return (
-    <section aria-labelledby="trend-panel-title" className="space-y-3">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="section-kicker">Cross-month trend</p>
-          <h2 id="trend-panel-title" className="mt-1 text-lg font-semibold">连续月份趋势</h2>
-          <p className="mt-1 text-xs text-muted-foreground">{trend.currentPeriod} 对比 {trend.previousPeriod}；连续上榜回看至当前月份。</p>
-        </div>
-        <Badge variant={trend.periodCount >= 3 ? "default" : "outline"}>{level} · {trend.periodCount} 个{unit}榜周期</Badge>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <TrendClassCard label="短期爆发" items={burst} note={trend.periodKind === "week" ? "本周新进入头部且快速增长" : "本月新进入头部，需周榜验证速度"} />
-        <TrendClassCard label="持续上升" items={sustained} note={`连续至少 3 个${unit}榜周期且本期继续增长`} />
-        <TrendClassCard label="稳定热门" items={stable} note={`连续在榜且本期波动不超过约 10%`} />
-        <TrendClassCard label="热度回落" items={cooling} note="本期头部样本次数低于上一周期" />
-      </div>
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Card>
-          <CardHeader><CardTitle className="text-base">题材动量</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            {rising.length ? rising.map((item) => <TrendLine key={item.name} name={item.name} value={`+${item.change}`} note={`本期 ${item.current} 次 · 连续 ${item.streak} 个${unit}榜周期`} positive />) : <Empty message="头部题材中暂无环比上升项。" />}
-            {declining.length > 0 && <div className="border-t pt-3"><p className="mb-2 text-xs font-semibold text-muted-foreground">回落观察</p>{declining.map((item) => <TrendLine key={item.name} name={item.name} value={String(item.change)} note={`本期 ${item.current} 次`} />)}</div>}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-base">新增与消失信号</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            <div><p className="text-xs font-semibold text-primary">新进入头部题材</p><div className="mt-2 flex flex-wrap gap-1.5">{trend.newGenres.length ? trend.newGenres.map((item) => <Badge key={item} variant="secondary">{item}</Badge>) : <span className="text-xs text-muted-foreground">无新增头部题材</span>}</div></div>
-            <div><p className="text-xs font-semibold text-muted-foreground">退出头部题材</p><div className="mt-2 flex flex-wrap gap-1.5">{trend.fadingGenres.length ? trend.fadingGenres.map((item) => <Badge key={item} variant="outline">{item}</Badge>) : <span className="text-xs text-muted-foreground">无退出头部题材</span>}</div></div>
-            <p className="rounded-xl bg-muted/40 p-3 text-xs leading-5 text-muted-foreground">“新增/消失”指进入或退出当月头部题材，不代表市场中首次出现或彻底消失。</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-base">连续上榜作品</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            {trend.works.length ? trend.works.slice(0, 6).map((item) => <TrendLine key={item.title} name={item.titleCn || item.title} value={item.currentRank !== null ? `#${item.currentRank}` : "在榜"} note={`${item.movement > 0 ? `上升 ${item.movement} 位` : item.movement < 0 ? `下降 ${Math.abs(item.movement)} 位` : "排名持平或缺少排名"} · 连续 ${item.streak} 个${unit}榜周期`} positive={item.movement > 0} />) : <Empty message="相邻同类榜单尚未识别到严格同名的连续上榜作品。" />}
-          </CardContent>
-        </Card>
-      </div>
-      {trend.platforms.length > 0 && (
-        <Card><CardContent className="flex flex-wrap items-center gap-2 p-4"><span className="mr-2 text-xs font-semibold">12平台播放增量变化</span>{trend.platforms.slice(0, 12).map((item) => <Badge key={item.name} variant="outline">{item.name} {item.change > 0 ? `+${item.change}` : item.change}</Badge>)}</CardContent></Card>
-      )}
-      {trend.periodCount < 3 && <p className="text-xs leading-5 text-amber-700">当前只有两个连续{unit}榜周期，以上为环比观察信号；累计到3个同类周期后才标记为短期趋势。</p>}
-    </section>
-  );
-}
-function TrendClassCard({ label, items, note }: { label: string; items: TrendRow[]; note: string }) {
-  return <Card><CardContent className="p-4"><div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold">{label}</p><Badge variant="secondary">{items.length}</Badge></div><div className="mt-3 flex min-h-7 flex-wrap gap-1.5">{items.length ? items.map((item) => <Badge key={item.name} variant="outline">{item.name}</Badge>) : <span className="text-xs text-muted-foreground">本期暂无</span>}</div><p className="mt-3 text-[11px] leading-5 text-muted-foreground">{note}</p></CardContent></Card>;
-}
-function TrendLine({ name, value, note, positive = false }: { name: string; value: string; note: string; positive?: boolean }) {
-  return <div className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2"><div className="min-w-0"><p className="truncate text-sm font-medium">{name}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{note}</p></div><span className={`shrink-0 text-sm font-semibold ${positive ? "text-emerald-700" : "text-muted-foreground"}`}>{value}</span></div>;
-}
 function WorkDetail({ work, onClose }: { work: Work; onClose: () => void }) {
   const tags = work.genre.split(/[、,，/]/).filter(Boolean);
   return (
@@ -3679,32 +3467,12 @@ function ChartCard({
       </CardHeader>
       <CardContent>
         {data.length ? (
-          <div className="h-60">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={data}
-                layout="vertical"
-                margin={{ top: 0, right: 20, left: 8, bottom: 0 }}
-              >
-                <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                <XAxis
-                  type="number"
-                  allowDecimals={false}
-                  tick={{ fontSize: 11 }}
-                />
-                <YAxis
-                  dataKey="name"
-                  type="category"
-                  width={84}
-                  tick={{ fontSize: 11 }}
-                />
-                <Tooltip
-                  cursor={{ fill: "rgba(201,244,90,.12)" }}
-                  formatter={(value) => [`${value} 条目`, "出现次数"]}
-                />
-                <Bar dataKey="value" fill="#315f4a" radius={[0, 6, 6, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="max-h-[480px] space-y-3 overflow-y-auto pr-2">
+            <p className="text-xs leading-5 text-muted-foreground">按数量降序；平台/剧场号统计关联记录，题材统计同名去重作品。关联数不是用户数或市场份额。</p>
+            {[...data].sort((a,b)=>b.value-a.value).map((item,index)=><div key={item.name} className="rounded-lg border border-[#e2eadb] p-3">
+              <div className="flex justify-between gap-3 text-xs"><span className="min-w-0 break-words"><strong className="mr-2 text-[#315f4a]">{index+1}</strong>{item.name}</span><span className="shrink-0 font-semibold">{item.value.toLocaleString()}</span></div>
+              <div className="mt-2 h-2 rounded-full bg-[#edf1e8]"><div className={`h-2 rounded-full ${index<3?'bg-[#173f31]':'bg-[#71947d]'}`} style={{width:`${item.value/Math.max(1,...data.map(d=>d.value))*100}%`}} /></div>
+            </div>)}
           </div>
         ) : (
           <Empty message={empty} />
