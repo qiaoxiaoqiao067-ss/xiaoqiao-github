@@ -3,6 +3,7 @@ import { z } from "zod"
 import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
 import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
+import { analysisSnapshot } from "@/lib/market/import-scope"
 
 export const dynamic = "force-dynamic"
 
@@ -16,16 +17,17 @@ export async function GET(request: NextRequest) {
     const parsedId = z.string().uuid().safeParse(id)
     const offset = Number(request.nextUrl.searchParams.get("offset") || 0)
     if (!parsedId.success || !Number.isInteger(offset) || offset < 0 || offset > 10000) return NextResponse.json({error:"无效的榜单分页参数"},{status:400})
-    const {data,error}=await serviceClient.from("market_data_imports").select("raw_rows,updated_at").eq("id",parsedId.data).eq("user_id",access.ownerId).single()
+    const {data,error}=await serviceClient.from("market_data_imports").select("id,source_name,file_name,period_label,created_at,raw_rows,updated_at").eq("id",parsedId.data).eq("user_id",access.ownerId).single()
     if(error || !data) return NextResponse.json({error:error?.message||"榜单不存在"},{status:404})
-    const rows=Array.isArray(data.raw_rows)?data.raw_rows:[]
+    const snapshot=request.nextUrl.searchParams.get('mode')==='sample' ? analysisSnapshot({...data,raw_rows:Array.isArray(data.raw_rows)?data.raw_rows:[]}) : {rows:Array.isArray(data.raw_rows)?data.raw_rows:[],issues:[]}
+    const rows=snapshot.rows
     const page = rows.slice(offset,offset+5000)
     // Bound bytes as well as rows; Chinese text and variable-length cells vary greatly.
     while (page.length > 1 && Buffer.byteLength(JSON.stringify(page),"utf8") > 2_000_000) page.length=Math.ceil(page.length/2)
     if (Buffer.byteLength(JSON.stringify(page),"utf8") > 2_000_000) return NextResponse.json({error:"单条榜单记录过大，请检查导入文件。"},{status:413})
-    return NextResponse.json({rows:page,total:rows.length,updated_at:data.updated_at},{headers:{"Cache-Control":"no-store"}})
+    return NextResponse.json({rows:page,total:rows.length,updated_at:data.updated_at,analysis_issues:snapshot.issues},{headers:{"Cache-Control":"no-store"}})
   }
-  const { data, error } = await serviceClient.from("market_data_imports").select("id,user_id,source_name,period_label,file_name,row_count,columns,created_at,updated_at").eq("user_id", access.ownerId).order("created_at", { ascending: false })
+  const { data, error } = await serviceClient.from("market_data_imports").select("id,user_id,source_name,period_label,file_name,row_count,columns,created_at,updated_at").eq("user_id", access.ownerId).not("source_name","like","ADX日报:%").order("created_at", { ascending: false })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ imports: data || [] }, { headers: { "Cache-Control": "no-store" } })
 }

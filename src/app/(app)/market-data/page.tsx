@@ -140,6 +140,7 @@ const FIELD_ROLE_LABELS: Record<FieldRole, string> = {
 function isMarketImport(item: MarketDataImport) {
   return (
     item.source_name !== "中文名映射" &&
+    !item.source_name.startsWith("ADX日报:") &&
     !item.source_name.startsWith("外部信号:") &&
     !item.source_name.startsWith(VERSION_MARKER_PREFIX)
   );
@@ -572,8 +573,6 @@ function analyze(
 }
 
 export default function MarketDataPage() {
-  const { imports, loading, error, addImport, deleteImport, refetch } =
-    useMarketDataImports();
   const { ideas, addIdea } = useIdeas();
   const fileRef = useRef<HTMLInputElement>(null);
   const chineseNameFileRef = useRef<HTMLInputElement>(null);
@@ -583,6 +582,8 @@ export default function MarketDataPage() {
     const previousMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     return `${previousMonth.getFullYear()}年${previousMonth.getMonth() + 1}月`;
   });
+  const [comparisonChoice, setComparisonChoice] = useState("");
+  const { imports, loading, metadataLoading, error, addImport, deleteImport, refetch } = useMarketDataImports(period, comparisonChoice);
   const initialPeriodResolved = useRef(false);
   const [activeView, setActiveView] = useState<MarketView>("overview");
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("works");
@@ -685,7 +686,7 @@ export default function MarketDataPage() {
     [imports],
   );
   useEffect(() => {
-    if (loading || initialPeriodResolved.current) return;
+    if (metadataLoading || initialPeriodResolved.current) return;
     initialPeriodResolved.current = true;
     const capturedPeriod = localStorage.getItem("market-data-captured-period");
     const latestImportedPeriod = periodOptions.find(option => periodKindFor(option) === "month") || periodOptions[0];
@@ -697,7 +698,7 @@ export default function MarketDataPage() {
     return () => {
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [loading, periodOptions]);
+  }, [metadataLoading, periodOptions]);
   const periodImports = useMemo(
     () => activeImportsForPeriod(imports, period),
     [imports, period],
@@ -721,7 +722,6 @@ export default function MarketDataPage() {
       fieldRoleMap,
     ],
   );
-  const [comparisonChoice, setComparisonChoice] = useState("");
   const comparablePeriods = periodOptions.filter(p => periodKindFor(p) === periodKindFor(period) && p !== period);
   const previousPeriod = comparablePeriods.includes(comparisonChoice) ? comparisonChoice : comparablePeriods.filter(p => periodNumber(p) < periodNumber(period)).sort(comparePeriods)[0] || "";
   const currentBoards = useMemo(() => boardSamples(periodImports.filter(isMarketImport), periodKindFor(period)), [periodImports, period]);
@@ -1423,7 +1423,7 @@ export default function MarketDataPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={exportMonthlyBrief}
+                  disabled={loading || !!error} onClick={exportMonthlyBrief}
                   className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
                 >
                   <FileDown className="mr-1.5 h-4 w-4" />
@@ -1728,8 +1728,9 @@ export default function MarketDataPage() {
             </Button>
           </div>
         )}
-        {activeView === "overview" && <MonitorOverview data={dashboard} research={marketResearch} kind={periodKindFor(period)} period={period} loading={loading} onCollect={() => setActiveView("data")} onInspect={(mode) => { setActiveView("analysis"); setAnalysisMode(mode); }} />}
-        {activeView === "analysis" && (
+        {!error && activeView === "overview" && <MonitorOverview data={dashboard} research={marketResearch} kind={periodKindFor(period)} period={period} loading={loading} onCollect={() => setActiveView("data")} onInspect={(mode) => { setActiveView("analysis"); setAnalysisMode(mode); }} />}
+        {activeView === "analysis" && loading && <p role="status" className="rounded-2xl border bg-white p-6 text-sm text-muted-foreground">正在按需读取所选周期，完成后统一更新比较结果…</p>}
+        {!loading && !error && activeView === "analysis" && (
           <div className="space-y-6">
         <AnalysisModeTabs activeMode={analysisMode} onChange={setAnalysisMode} />
         {analysisMode === "works" && (

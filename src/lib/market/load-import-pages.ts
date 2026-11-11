@@ -1,20 +1,22 @@
 /** Fetch bounded responses; publish the complete snapshot only after every page succeeds. */
-export async function loadImportPages<T extends {id:string; updated_at:string}>(metadata:T[], getPage:(id:string,offset:number)=>Promise<{rows:Record<string,unknown>[];total:number;updated_at:string}>) {
-  const results: (T & {raw_rows:Record<string,unknown>[]})[] = new Array(metadata.length)
+export async function loadImportPages<T extends {id:string; updated_at:string}>(metadata:T[], getPage:(id:string,offset:number)=>Promise<{rows:Record<string,unknown>[];total:number;updated_at:string;analysis_issues?:string[]}>) {
+  const results: (T & {raw_rows:Record<string,unknown>[];analysis_issues:string[]})[] = new Array(metadata.length)
   let cursor=0
   await Promise.all(Array.from({length:Math.min(4,metadata.length)},async()=>{
     while(cursor<metadata.length){
       const index=cursor++, item=metadata[index], rows:Record<string,unknown>[]=[]
       let total=Infinity
+      const issues=new Set<string>()
       do {
         const page=await getPage(item.id,rows.length)
+        page.analysis_issues?.forEach(issue=>issues.add(issue))
         if(page.updated_at!==item.updated_at) throw new Error('榜单在读取时更新，请重新连接以获取完整版本。')
         if(!Number.isInteger(page.total)||page.total<0||page.total>10000||(!page.rows.length&&page.total>rows.length)||page.rows.length>5000) throw new Error('榜单分页不完整，请重新连接。')
         if(total!==Infinity && total!==page.total) throw new Error('榜单条数在读取时变化，请重新连接。')
         total=page.total;rows.push(...page.rows)
         if(rows.length>total) throw new Error('榜单分页条数不一致。')
       } while(rows.length<total)
-      results[index]={...item,raw_rows:rows}
+      results[index]={...item,raw_rows:rows,analysis_issues:[...issues]}
     }
   }))
   return results
