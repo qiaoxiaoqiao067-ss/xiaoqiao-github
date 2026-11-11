@@ -443,13 +443,14 @@ function analyze(
           chineseNameMap[normalizedTitle] ||
           "",
         rowPlatforms = [
-          ...new Set(
-            platformKeys
+          ...new Set([
+            ...(signal === "platform" ? [platformForFile(source.file_name)] : []),
+            ...platformKeys
               .map((key) => text(row[key]))
               .filter(Boolean)
               .map((value) => platformName(value, signal, platformAliasMap))
               .filter(Boolean),
-          ),
+          ]),
         ],
         platform =
           rowPlatforms[0] ||
