@@ -19,7 +19,11 @@ export async function GET(request: NextRequest) {
     const {data,error}=await serviceClient.from("market_data_imports").select("raw_rows,updated_at").eq("id",parsedId.data).eq("user_id",access.ownerId).single()
     if(error || !data) return NextResponse.json({error:error?.message||"榜单不存在"},{status:404})
     const rows=Array.isArray(data.raw_rows)?data.raw_rows:[]
-    return NextResponse.json({rows:rows.slice(offset,offset+1000),total:rows.length,updated_at:data.updated_at},{headers:{"Cache-Control":"no-store"}})
+    const page = rows.slice(offset,offset+5000)
+    // Bound bytes as well as rows; Chinese text and variable-length cells vary greatly.
+    while (page.length > 1 && Buffer.byteLength(JSON.stringify(page),"utf8") > 2_000_000) page.length=Math.ceil(page.length/2)
+    if (Buffer.byteLength(JSON.stringify(page),"utf8") > 2_000_000) return NextResponse.json({error:"单条榜单记录过大，请检查导入文件。"},{status:413})
+    return NextResponse.json({rows:page,total:rows.length,updated_at:data.updated_at},{headers:{"Cache-Control":"no-store"}})
   }
   const { data, error } = await serviceClient.from("market_data_imports").select("id,user_id,source_name,period_label,file_name,row_count,columns,created_at,updated_at").eq("user_id", access.ownerId).order("created_at", { ascending: false })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

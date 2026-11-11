@@ -9,7 +9,7 @@ export async function loadImportPages<T extends {id:string; updated_at:string}>(
       do {
         const page=await getPage(item.id,rows.length)
         if(page.updated_at!==item.updated_at) throw new Error('榜单在读取时更新，请重新连接以获取完整版本。')
-        if(!Number.isInteger(page.total)||page.total<0||page.total>10000||(!page.rows.length&&page.total>rows.length)||page.rows.length>1000) throw new Error('榜单分页不完整，请重新连接。')
+        if(!Number.isInteger(page.total)||page.total<0||page.total>10000||(!page.rows.length&&page.total>rows.length)||page.rows.length>5000) throw new Error('榜单分页不完整，请重新连接。')
         if(total!==Infinity && total!==page.total) throw new Error('榜单条数在读取时变化，请重新连接。')
         total=page.total;rows.push(...page.rows)
         if(rows.length>total) throw new Error('榜单分页条数不一致。')
