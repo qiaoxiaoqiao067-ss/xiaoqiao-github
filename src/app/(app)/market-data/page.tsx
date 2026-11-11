@@ -6,6 +6,8 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { BoardComparisons } from "@/components/market/board-comparisons";
 import { BoardPlatforms } from "@/components/market/board-platforms";
 import { boardSamples, compareBoards } from "@/lib/market/board-analysis";
+import { MarketResearchPanel } from "@/components/market/market-research";
+import { buildMarketResearch, type ResearchFinding } from "@/lib/market/research";
 import { MonitorOverview } from "@/components/market/monitor-overview";
 import { sampleMarketRows, latestBoardImports, marketBoardKey } from "@/lib/market/monitoring-policy";
 import { PageHero } from "@/components/layout/page-hero";
@@ -20,7 +22,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   BarChart3,
-  BookmarkPlus,
   CircleCheck,
   CircleOff,
   CloudDownload,
@@ -90,16 +91,6 @@ type Dataset = {
   signal: string;
   heatLabel: string;
 };
-type Opportunity = {
-  title: string;
-  titleCn: string;
-  titleKey: string;
-  genre: string;
-  adHeat: number;
-  tkHeat: number;
-  score: number;
-  quadrant: "双高验证" | "投放待验证" | "自传播机会" | "观察池";
-};
 type Dashboard = {
   works: Work[];
   genres: Bucket[];
@@ -110,7 +101,6 @@ type Dashboard = {
   adPlatforms: Bucket[];
   tkChannels: Bucket[];
   genrePairs: Bucket[];
-  opportunities: Opportunity[];
   datasets: Dataset[];
   fields: string[];
   totalWorks: number;
@@ -120,13 +110,6 @@ type Dashboard = {
   singleSourceGenres: Bucket[];
   overlapWorks: Work[];
   overlapCount: number;
-};
-type ProductionAssessment = {
-  score: number;
-  difficulty: "低" | "中" | "高";
-  characterRisk: "低" | "中" | "高";
-  reuse: "低" | "中" | "高";
-  reasons: string[];
 };
 type ExternalSignal = { id: string; source: string; topic: string; metric: string; value: number | null; change: string; url: string; note: string; period: string };
 type AssetRankRow = { title: string; genre: string; totalMaterials: number; newMaterials: number | null; impressions: number | null; platform: string; source: string };
@@ -226,20 +209,6 @@ function short(value: number) {
 function normalizeTitle(value: string) {
   return value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }
-function assessProduction(work: Work): ProductionAssessment {
-  const tags = work.genre.split(/[、,，/]/).map((item) => item.trim()).filter(Boolean);
-  const count = (keywords: string[]) => tags.filter((tag) => keywords.some((keyword) => tag.includes(keyword))).length;
-  const fit = count(["都市", "豪门", "家庭", "情感", "甜宠", "虐恋", "复仇", "逆袭", "婚恋", "职场", "校园", "黑帮"]);
-  const complex = count(["科幻", "玄幻", "仙侠", "奇幻", "战争", "末世", "动作", "历史", "年代", "宫斗", "灾难", "机甲"]);
-  const character = count(["家庭", "豪门", "后宫", "群像", "宫斗", "战争", "黑帮", "多角恋"]);
-  const reusable = count(["都市", "豪门", "家庭", "职场", "校园", "医院", "婚恋", "甜宠"]);
-  const score = Math.max(20, Math.min(95, 66 + Math.min(20, fit * 4) - complex * 9 - Math.max(0, character - 1) * 4));
-  const difficulty: ProductionAssessment["difficulty"] = complex >= 2 ? "高" : complex === 1 ? "中" : "低";
-  const characterRisk: ProductionAssessment["characterRisk"] = character >= 2 ? "高" : character === 1 ? "中" : "低";
-  const reuse: ProductionAssessment["reuse"] = reusable >= 2 ? "高" : reusable === 1 ? "中" : "低";
-  const reasons = [fit > 0 && "现代关系与室内场景较适合AI仿真人", complex > 0 && "包含世界观、动作或特效复杂度", character > 0 && "多角色关系提高人物一致性管理成本", reusable > 0 && "存在可复用的家庭、职场或都市资产"].filter((item): item is string => Boolean(item));
-  return { score, difficulty, characterRisk, reuse, reasons: reasons.length ? reasons : ["标签信息有限，建议进行视觉小样测试"] };
-}
 function signalFor(columns: string[]): Signal {
   const override = columns.find((column) => column.startsWith(SIGNAL_OVERRIDE_PREFIX))?.slice(SIGNAL_OVERRIDE_PREFIX.length);
   if (override === "ad" || override === "tk" || override === "platform" || override === "other") return override;
@@ -268,11 +237,6 @@ function platformName(
       value.toLocaleLowerCase().includes(name.toLocaleLowerCase()),
     ) || value.split(/[-—–（(：:]/)[0].trim();
   return platformAliasMap[normalizeTitle(base)] || base;
-}
-function percentile(values: number[], ratio: number) {
-  if (!values.length) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * ratio))];
 }
 function periodNumber(value: string) {
   const year = Number(value.match(/(20\d{2})/)?.[1] || 0);
@@ -585,60 +549,6 @@ function analyze(
       .filter(([, signals]) => signals.has("ad") && signals.has("tk"))
       .map(([key]) => key),
   );
-  const byTitle = new Map<string, Work[]>();
-  allWorks.forEach((item) =>
-    byTitle.set(item.titleKey, [...(byTitle.get(item.titleKey) || []), item]),
-  );
-  const adThreshold = percentile(
-      allWorks
-        .filter((item) => item.signal === "ad")
-        .map((item) => item.heat || 0),
-      0.8,
-    ),
-    tkThreshold = percentile(
-      allWorks
-        .filter((item) => item.signal === "tk")
-        .map((item) => item.heat || 0),
-      0.8,
-    );
-  const opportunities = [...overlapKeys]
-    .map((key) => {
-      const matches = byTitle.get(key) || [],
-        ad = matches.find((item) => item.signal === "ad"),
-        tk = matches.find((item) => item.signal === "tk"),
-        adHeat = ad?.heat || 0,
-        tkHeat = tk?.heat || 0,
-        adHigh = adHeat >= adThreshold,
-        tkHigh = tkHeat >= tkThreshold,
-        score = Math.min(
-          100,
-          Math.round(
-            50 * Math.min(1, adThreshold ? adHeat / adThreshold : 0) +
-              50 * Math.min(1, tkThreshold ? tkHeat / tkThreshold : 0),
-          ),
-        );
-      return {
-        title: ad?.title || tk?.title || key,
-        titleCn: ad?.titleCn || tk?.titleCn || "",
-        titleKey: key,
-        genre: ad?.genre || tk?.genre || "",
-        adHeat,
-        tkHeat,
-        score,
-        quadrant:
-          adHigh && tkHigh
-            ? "双高验证"
-            : adHigh
-              ? "投放待验证"
-              : tkHigh
-                ? "自传播机会"
-                : "观察池",
-      } as Opportunity;
-    })
-    .sort((a, b) => {
-      const order = { 双高验证: 0, 自传播机会: 1, 投放待验证: 2, 观察池: 3 };
-      return order[a.quadrant] - order[b.quadrant] || b.score - a.score;
-    });
   return {
     works: sortedWorks,
     genres: order(genres),
@@ -649,7 +559,6 @@ function analyze(
     adPlatforms: order(adPlatforms),
     tkChannels: order(tkChannels),
     genrePairs: order(genrePairs),
-    opportunities,
     datasets,
     fields: [...fields],
     totalWorks: new Set(allWorks.map((item) => item.titleKey)).size,
@@ -818,6 +727,7 @@ export default function MarketDataPage() {
   const currentBoards = useMemo(() => boardSamples(periodImports.filter(isMarketImport), periodKindFor(period)), [periodImports, period]);
   const previousBoards = boardSamples(activeImportsForPeriod(imports, previousPeriod).filter(isMarketImport), periodKindFor(period));
   const boardComparisons = compareBoards(currentBoards, previousBoards);
+  const marketResearch = buildMarketResearch(currentBoards, boardComparisons);
   const periodGroups = useMemo(
     () => ({
       month: periodOptions.filter((item) => periodKindFor(item) === "month").sort(comparePeriods),
@@ -924,12 +834,6 @@ export default function MarketDataPage() {
     () => [...new Set(periodImports.filter(isMarketImport).flatMap((item) => item.columns))].sort((a, b) => a.localeCompare(b, "zh-CN")),
     [periodImports],
   );
-  const latest = imports.find(
-    (item) =>
-      isMarketImport(item) &&
-      item.period_label === period &&
-      versionIdFor(item) === activeVersionFor(imports, period),
-  );
   const externalSignals = useMemo<ExternalSignal[]>(() => imports.filter((item) => item.source_name.startsWith("外部信号:") && item.period_label === period).flatMap((item) => item.raw_rows.map((row, index) => {
     const find = (test: RegExp) => Object.keys(row).find((key) => test.test(key));
     const topicKey = find(/话题|关键词|剧名|作品|title|topic|keyword/i);
@@ -1032,56 +936,20 @@ export default function MarketDataPage() {
   const chineseTitleCoverage = dashboard.totalWorks
     ? (chineseTitleCount / dashboard.totalWorks) * 100
     : 0;
-  const saveOpportunity = async (item: Opportunity) => {
-    const saved =
-      savedTitles.has(item.titleKey) ||
-      (item.titleCn ? savedTitles.has(normalizeTitle(item.titleCn)) : false);
-    if (saved) {
-      setMessage(`“${item.titleCn || item.title}”已在选题情报中。`);
-      return;
-    }
-    setSavingIdea(item.titleKey);
+  const researchTitle = (item: ResearchFinding) => `市场研究｜${period}｜${item.title}`;
+  const researchSaved = (item: ResearchFinding) => savedTitles.has(normalizeTitle(researchTitle(item)));
+  const saveResearch = async (item: ResearchFinding) => {
+    if (researchSaved(item) || savingIdea) return;
+    setSavingIdea(item.id);
     try {
       await addIdea({
-        title: item.titleCn || item.title,
-        source: `ADX · ${latest?.period_label || period}`,
-        market: "海外市场 / 北美优先",
-        genre: item.genre,
-        status: "待评估",
-        notes: `${item.titleCn ? `原始剧名：${item.title}。` : ""}市场看板机会指数 ${item.score}。${item.quadrant}：广告预估曝光 ${short(item.adHeat)}，TikTok播放增量 ${short(item.tkHeat)}。下一步核验人物关系、前三集钩子、付费卡点和AI制作难度。`,
+        title: researchTitle(item), source: `市场研判 · ${period} 对比 ${previousPeriod || "无历史"}`,
+        market: "目标市场待核验", genre: item.genre, status: "待评估",
+        notes: ["研究建议，未经剧情及商业效果验证。", ...item.facts, `判断：${item.judgment}`, `开发：${item.development}`, `投放测试：${item.advertising}`, `复核条件：${item.validation}`, ...item.cautions, ...item.cases.map(c => `对标：${c.title}｜${c.period}｜${c.source}｜原榜${c.rank}｜${c.metric} ${c.value ?? "未提供"}｜${c.channel}｜${c.regions}`)].join("\n"),
       });
-      setMessage(
-        `已将“${item.titleCn || item.title}”加入选题情报的“待评估”列表。`,
-      );
-    } catch (caught) {
-      setMessage(caught instanceof Error ? caught.message : "加入选题库失败");
-    } finally {
-      setSavingIdea("");
-    }
-  };
-  const saveGenrePair = async (item: Bucket) => {
-    const title = `题材机会｜${item.name}`;
-    const titleKey = normalizeTitle(title);
-    if (savedTitles.has(titleKey)) {
-      setMessage(`“${item.name}”已在选题情报中。`);
-      return;
-    }
-    setSavingIdea(`genre:${item.name}`);
-    try {
-      await addIdea({
-        title,
-        source: `ADX · ${latest?.period_label || period}`,
-        market: "海外市场 / 北美优先",
-        genre: item.name,
-        status: "待调研",
-        notes: `本期AI仿真人样本中，“${item.name}”组合共现 ${item.value.toLocaleString()} 次，累计热度 ${short(item.heat)}。建议优先核验具体人物关系、核心冲突、前三集钩子、付费卡点、目标受众与AI制作难度；该记录是数据机会信号，不等同于已确认趋势。`,
-      });
-      setMessage(`已将题材组合“${item.name}”加入选题情报的“待调研”列表。`);
-    } catch (caught) {
-      setMessage(caught instanceof Error ? caught.message : "加入选题库失败");
-    } finally {
-      setSavingIdea("");
-    }
+      setMessage(`已保存“${item.genre}”研究方向到选题情报，状态为待评估。`);
+    } catch (caught) { setMessage(caught instanceof Error ? caught.message : "保存研究方向失败"); }
+    finally { setSavingIdea(""); }
   };
   const exportCurrent = () => {
     const rows = orderedWorks.map((work) => ({
@@ -1113,9 +981,6 @@ export default function MarketDataPage() {
       setMessage(`“${period}”没有可生成简报的数据。`);
       return;
     }
-    const leadGenre = dashboard.genres[0];
-    const leadWork = dashboard.overlapWorks[0];
-    const sharedGenres = dashboard.sharedGenres.slice(0, 8).map((item) => item.name);
     const book = XLSX.utils.book_new();
     const append = (name: string, rows: Record<string, unknown>[], widths: number[]) => {
       const sheet = XLSX.utils.json_to_sheet(rows);
@@ -1130,11 +995,10 @@ export default function MarketDataPage() {
         { 项目: "数据覆盖", 内容: `${dashboard.datasets.length} 个来源；${dashboard.rawRows.toLocaleString()} 行原始记录` },
         { 项目: "AI仿真人样本", 内容: `${dashboard.totalRows.toLocaleString()} 条记录；${dashboard.totalWorks.toLocaleString()} 个去重作品` },
         { 项目: "双信号验证", 内容: `${dashboard.overlapCount.toLocaleString()} 个严格同名作品` },
-        { 项目: "优先题材", 内容: leadGenre ? `${leadGenre.name}（出现 ${leadGenre.value.toLocaleString()} 次）` : "待识别" },
-        { 项目: "共同题材底盘", 内容: sharedGenres.length ? sharedGenres.join("、") : "当前未形成跨来源共同题材" },
-        { 项目: "重点作品", 内容: leadWork ? `${leadWork.titleCn || leadWork.title}｜投放与TikTok共同出现，待核验` : "暂无双信号重点作品" },
-        { 项目: "本期判断", 内容: "投放信号反映市场在推什么，TikTok播放信号反映用户在看什么；共同出现的题材与作品优先验证。" },
-        { 项目: "建议动作", 内容: leadGenre ? `围绕“${leadGenre.name}”拆解具体人物关系、前三集钩子、付费卡点与AI制作可行性。` : "先补齐题材字段和双来源样本。" },
+        { 项目: "对比期", 内容: previousPeriod || "无历史数据" },
+        ...marketResearch.findings.map(f => ({ 项目: f.title, 内容: [f.facts.join("；"), f.judgment, f.development].join("\n") })),
+        { 项目: "证据缺口", 内容: marketResearch.limitations.join("\n") },
+        { 项目: "研究筛选规则", 内容: marketResearch.method },
         { 项目: "口径与风险", 内容: "每来源、每榜单日50/周300/月500；基于当前样本，不等于整个市场。广告预估曝光与TikTok播放增量分开呈现。" },
       ],
       [18, 90],
@@ -1155,18 +1019,8 @@ export default function MarketDataPage() {
     );
     append(
       "重点作品",
-      dashboard.opportunities.slice(0, 50).map((item, index) => ({
-        排名: index + 1,
-        中文辅助名: item.titleCn,
-        海外原名: item.title,
-        题材: item.genre,
-        机会象限: item.quadrant,
-        机会指数: item.score,
-        广告预估曝光: item.adHeat,
-        TikTok播放增量: item.tkHeat,
-        建议: "核验人物关系、前三集钩子、付费卡点与AI制作难度",
-      })),
-      [8, 28, 42, 28, 16, 12, 18, 18, 46],
+      marketResearch.findings.flatMap(f => f.cases.map(c => ({ 研究方向: f.genre, 作品: c.title, 来源: c.source, 统计期: c.period, 原榜排名: c.rank, 指标: c.metric, 数值: c.value, 剧场号: c.channel, 国家Top3: c.regions, 说明: "同榜同标签按指标选取，剧情未核验，不代表跨榜同一作品" }))),
+      [18, 42, 40, 16, 12, 16, 18, 24, 24, 50],
     );
     append(
       "平台与渠道",
@@ -1191,12 +1045,9 @@ export default function MarketDataPage() {
       [36, 15, 18, 15, 15, 15, 20, 20],
     );
     append(
-      "AI制作预评估",
-      [...new Map(dashboard.works.map((item) => [item.titleKey, item])).values()].map((work) => {
-        const assessment = assessProduction(work);
-        return { 中文辅助名: work.titleCn, 海外原名: work.title, 题材: work.genre, AI适配度: assessment.score, 制作难度: assessment.difficulty, 角色一致性风险: assessment.characterRisk, 场景资产复用: assessment.reuse, 规则判断依据: assessment.reasons.join("；"), 使用提醒: "规则预判，立项前需进行视觉小样与人工复核" };
-      }).sort((a, b) => b.AI适配度 - a.AI适配度),
-      [28, 42, 28, 12, 12, 18, 16, 60, 38],
+      "研究行动",
+      marketResearch.findings.map(f => ({ 方向: f.title, 决定: f.decision, 榜单依据: f.facts.join("\n"), 判断: f.judgment, 开发动作: f.development, 投放测试: f.advertising, 复核条件: f.validation, 风险: f.cautions.join("\n") })),
+      [32, 18, 70, 60, 70, 70, 70, 60],
     );
     if (externalSignals.length) {
       append("外部信号旁证", externalSignals.map((item) => ({ 来源: item.source, 统计期: item.period, 话题或作品: item.topic, 指标: item.metric, 数值: item.value, 环比变化: item.change, 证据链接: item.url, 备注: item.note, 口径提醒: "外部旁证，不与ADX指标混算" })), [22, 15, 32, 24, 16, 16, 45, 45, 30]);
@@ -1877,7 +1728,7 @@ export default function MarketDataPage() {
             </Button>
           </div>
         )}
-        {activeView === "overview" && <MonitorOverview data={dashboard} comparisons={boardComparisons} kind={periodKindFor(period)} period={period} loading={loading} onCollect={() => setActiveView("data")} onInspect={(mode) => { setActiveView("analysis"); setAnalysisMode(mode); }} />}
+        {activeView === "overview" && <MonitorOverview data={dashboard} research={marketResearch} kind={periodKindFor(period)} period={period} loading={loading} onCollect={() => setActiveView("data")} onInspect={(mode) => { setActiveView("analysis"); setAnalysisMode(mode); }} />}
         {activeView === "analysis" && (
           <div className="space-y-6">
         <AnalysisModeTabs activeMode={analysisMode} onChange={setAnalysisMode} />
@@ -2151,14 +2002,7 @@ export default function MarketDataPage() {
         )}
         {analysisMode === "production" && (
           <div className="space-y-6">
-            <OpportunityBoard
-              dashboard={dashboard}
-              savedTitles={savedTitles}
-              savingIdea={savingIdea}
-              onSave={saveOpportunity}
-              onSaveGenre={saveGenrePair}
-            />
-            <ProductionAssessmentPanel dashboard={dashboard} />
+            <MarketResearchPanel research={marketResearch} onSave={saveResearch} saved={researchSaved} saving={savingIdea} />
           </div>
         )}
         {analysisMode === "trends" && <BoardComparisons comparisons={boardComparisons} current={period} previous={previousPeriod} />}
@@ -2637,7 +2481,7 @@ function AnalysisModeTabs({
     { value: "materials", label: "总素材数" },
     { value: "markets", label: "平台" },
     { value: "trends", label: "趋势" },
-    { value: "production", label: "AI机会" },
+    { value: "production", label: "研究与行动" },
     { value: "external", label: "外部信号" },
   ];
   return (
@@ -2755,57 +2599,13 @@ function ExternalSignalsPanel({ signals, source, uploading, fileRef, onSourceCha
   signals.forEach((item) => counts.set(item.source, (counts.get(item.source) || 0) + 1));
   return (
     <section aria-labelledby="external-signals-title" className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="section-kicker">External evidence layer</p><h3 id="external-signals-title" className="mt-1 text-lg font-semibold">外部市场信号</h3><p className="mt-1 text-xs text-muted-foreground">用于验证ADX发现的题材与作品机会；来源口径不同，仅分开展示，不进入ADX热度和机会指数。</p></div><Badge variant="outline">旁证层 · 不混算</Badge></div>
+      <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="section-kicker">External evidence layer</p><h3 id="external-signals-title" className="mt-1 text-lg font-semibold">外部市场信号</h3><p className="mt-1 text-xs text-muted-foreground">用于验证ADX发现的题材与作品机会；来源口径不同，仅分开展示，不与ADX指标合并计算。</p></div><Badge variant="outline">旁证层 · 不混算</Badge></div>
       <Card><CardContent className="flex flex-wrap items-end gap-3 p-4"><label className="grid gap-1.5"><span className="text-xs font-medium text-muted-foreground">信号来源</span><select value={source} onChange={(event) => onSourceChange(event.target.value)} className="h-9 min-w-48 rounded-lg border bg-background px-3 text-sm">{sources.map((item) => <option key={item}>{item}</option>)}</select></label><input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={onImport} /><Button size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>{uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Upload className="mr-1.5 h-4 w-4" />}{uploading ? "导入中" : "导入外部信号"}</Button><Button size="sm" variant="outline" onClick={onDownloadTemplate}><FileDown className="mr-1.5 h-4 w-4" />下载模板</Button><p className="min-w-[260px] flex-1 text-xs leading-5 text-muted-foreground">标准字段：话题或作品、指标、数值、环比变化、证据链接、备注。建议在备注中记录地区、采集日期和具体口径。</p></CardContent></Card>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{sources.map((item) => <Card key={item}><CardContent className="p-4"><div className="flex items-center justify-between"><p className="text-sm font-semibold">{item}</p><Badge variant={counts.get(item) ? "secondary" : "outline"}>{counts.get(item) || 0}</Badge></div><p className="mt-2 text-xs text-muted-foreground">{counts.get(item) ? "本期已有旁证记录" : "本期尚未导入"}</p></CardContent></Card>)}</div>
       <Card><CardHeader><CardTitle className="text-base">本期外部证据记录</CardTitle></CardHeader><CardContent>{signals.length ? <div className="overflow-x-auto"><table className="min-w-[820px] w-full text-left text-sm"><thead><tr className="border-b text-xs text-muted-foreground"><th className="pb-3 font-medium">来源</th><th className="pb-3 font-medium">话题或作品</th><th className="pb-3 font-medium">指标</th><th className="pb-3 text-right font-medium">数值</th><th className="pb-3 text-right font-medium">变化</th><th className="pb-3 pl-4 font-medium">证据</th></tr></thead><tbody>{signals.map((item) => <tr key={item.id} className="border-b last:border-0"><td className="py-3"><Badge variant="outline">{item.source}</Badge></td><td className="max-w-[220px] truncate py-3 font-medium">{item.topic}</td><td className="py-3 text-muted-foreground">{item.metric}</td><td className="py-3 text-right">{item.value === null ? "—" : short(item.value)}</td><td className="py-3 text-right">{item.change || "—"}</td><td className="max-w-[280px] py-3 pl-4 text-xs text-muted-foreground">{/^https?:\/\//i.test(item.url) ? <a href={item.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">查看来源</a> : item.note || "未附链接"}</td></tr>)}</tbody></table></div> : <Empty message="本期还没有外部信号。下载模板整理证据后导入，或后续接入正式API。" />}</CardContent></Card>
     </section>
   );
 }
-function ProductionAssessmentPanel({ dashboard }: { dashboard: Dashboard }) {
-  const works = [...new Map(dashboard.works.map((item) => [item.titleKey, item])).values()];
-  const assessed = works.map((work) => ({ work, assessment: assessProduction(work) }));
-  const candidates = [...assessed].sort((a, b) => b.assessment.score - a.assessment.score || (b.work.heat || 0) - (a.work.heat || 0));
-  const highFit = assessed.filter((item) => item.assessment.score >= 75).length;
-  const hard = assessed.filter((item) => item.assessment.difficulty === "高").length;
-  const highRisk = assessed.filter((item) => item.assessment.characterRisk === "高").length;
-  const reusable = assessed.filter((item) => item.assessment.reuse === "高").length;
-  return (
-    <section aria-labelledby="production-assessment-title" className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div><p className="section-kicker">AI production fit</p><h3 id="production-assessment-title" className="mt-1 text-lg font-semibold">AI仿真人制作预评估</h3><p className="mt-1 text-xs text-muted-foreground">基于题材标签的规则评估，用于筛选小样测试对象，不代表实际制作成本或最终可行性。</p></div>
-        <Badge variant="outline">规则预判 · 需人工复核</Badge>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="高适配候选" value={highFit.toLocaleString()} note="AI适配度评分 ≥ 75" />
-        <Metric label="高制作难度" value={hard.toLocaleString()} note="世界观、动作或特效复杂" />
-        <Metric label="高一致性风险" value={highRisk.toLocaleString()} note="多角色关系与群像管理" />
-        <Metric label="高资产复用" value={reusable.toLocaleString()} note="都市、家庭或职场场景" />
-      </div>
-      <div className="grid gap-4 xl:grid-cols-[1.35fr_.65fr]">
-        <Card>
-          <CardHeader><CardTitle className="text-base">优先小样测试候选</CardTitle><p className="mt-1 text-xs text-muted-foreground">先按AI适配度排序，再参考市场热度；高分不等于可以直接立项。</p></CardHeader>
-          <CardContent className="overflow-x-auto">
-            <table className="min-w-[820px] w-full text-left text-sm"><thead><tr className="border-b text-xs text-muted-foreground"><th className="pb-3 font-medium">作品</th><th className="pb-3 text-right font-medium">适配度</th><th className="pb-3 text-center font-medium">制作难度</th><th className="pb-3 text-center font-medium">角色风险</th><th className="pb-3 text-center font-medium">资产复用</th><th className="pb-3 pl-4 font-medium">判断依据</th></tr></thead><tbody>{candidates.slice(0, 20).map(({ work, assessment }) => <tr key={work.titleKey} className="border-b last:border-0"><td className="max-w-[220px] py-3"><p className="truncate font-medium">{work.titleCn || work.title}</p><p className="mt-0.5 truncate text-[10px] text-muted-foreground">{work.genre}</p></td><td className="py-3 text-right font-semibold text-primary">{assessment.score}</td><td className="py-3 text-center"><RiskBadge value={assessment.difficulty} /></td><td className="py-3 text-center"><RiskBadge value={assessment.characterRisk} /></td><td className="py-3 text-center"><ReuseBadge value={assessment.reuse} /></td><td className="max-w-[320px] py-3 pl-4 text-xs leading-5 text-muted-foreground">{assessment.reasons.join("；")}</td></tr>)}</tbody></table>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-base">评估规则说明</CardTitle></CardHeader>
-          <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
-            <RuleLine title="适配度" text="现代情感、家庭、豪门、职场等可控关系与室内场景提高基础分。" />
-            <RuleLine title="制作难度" text="科幻、玄幻、战争、动作、年代和大规模特效题材提高难度。" />
-            <RuleLine title="角色一致性" text="群像、家庭、豪门、后宫、宫斗和黑帮关系增加角色管理风险。" />
-            <RuleLine title="资产复用" text="都市、家庭、职场、校园、医院等重复场景具有更高复用潜力。" />
-            <div className="rounded-xl bg-amber-500/10 p-3 text-xs leading-5 text-amber-800">进入开发前必须补做角色定妆、多人同框、核心场景和高难动作的小样测试。</div>
-          </CardContent>
-        </Card>
-      </div>
-    </section>
-  );
-}
-function RiskBadge({ value }: { value: "低" | "中" | "高" }) { return <Badge variant={value === "高" ? "destructive" : value === "中" ? "secondary" : "outline"}>{value}</Badge>; }
-function ReuseBadge({ value }: { value: "低" | "中" | "高" }) { return <Badge variant={value === "高" ? "default" : value === "中" ? "secondary" : "outline"}>{value}</Badge>; }
-function RuleLine({ title, text }: { title: string; text: string }) { return <div><p className="font-semibold text-foreground">{title}</p><p>{text}</p></div>; }
 function MarketCoverageNote() {
   return (
     <Card className="border-[#d7e4c8] bg-[#f7f9f3]">
@@ -3099,177 +2899,6 @@ function Empty({ message }: { message: string }) {
   return (
     <div className="rounded-xl border border-dashed p-5 text-sm leading-6 text-muted-foreground">
       {message}
-    </div>
-  );
-}
-function OpportunityBoard({
-  dashboard,
-  savedTitles,
-  savingIdea,
-  onSave,
-  onSaveGenre,
-}: {
-  dashboard: Dashboard;
-  savedTitles: Set<string>;
-  savingIdea: string;
-  onSave: (item: Opportunity) => Promise<void>;
-  onSaveGenre: (item: Bucket) => Promise<void>;
-}) {
-  const quadrants: Opportunity["quadrant"][] = [
-    "双高验证",
-    "自传播机会",
-    "投放待验证",
-    "观察池",
-  ];
-  const descriptions = {
-    双高验证: "投放和播放均进入各自前20%，优先拆解",
-    自传播机会: "播放强于投放，关注自然传播与题材新鲜度",
-    投放待验证: "投放强于播放，继续观察消费侧反馈",
-    观察池: "已有双信号，但尚未进入两侧头部",
-  };
-  return (
-    <div className="grid gap-4 xl:grid-cols-[1.2fr_.8fr]">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">双信号作品四象限</CardTitle>
-          <p className="mt-1 text-xs text-muted-foreground">
-            以各自榜单AI作品热度前20%为高信号阈值，仅比较严格同名作品。
-          </p>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2">
-          {quadrants.map((quadrant) => {
-            const items = dashboard.opportunities.filter(
-              (item) => item.quadrant === quadrant,
-            );
-            return (
-              <div
-                key={quadrant}
-                className="rounded-2xl border bg-muted/20 p-4"
-              >
-                <div className="flex items-center justify-between">
-                  <p className="font-semibold">{quadrant}</p>
-                  <Badge
-                    variant={quadrant === "双高验证" ? "default" : "secondary"}
-                  >
-                    {items.length}
-                  </Badge>
-                </div>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  {descriptions[quadrant]}
-                </p>
-                <div className="mt-3 space-y-2">
-                  {items.slice(0, 3).map((item) => {
-                    const saved =
-                      savedTitles.has(item.titleKey) ||
-                      (item.titleCn
-                        ? savedTitles.has(normalizeTitle(item.titleCn))
-                        : false);
-                    return (
-                      <div
-                        key={item.titleKey}
-                        className="rounded-xl bg-background px-3 py-2"
-                      >
-                        <div className="flex items-start gap-2">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-xs font-medium">
-                              {item.titleCn || item.title}
-                            </p>
-                            {item.titleCn && (
-                              <p className="truncate text-[10px] text-muted-foreground">
-                                {item.title}
-                              </p>
-                            )}
-                            <p className="mt-1 flex gap-3 text-[10px] text-muted-foreground">
-                              <span>机会指数 {item.score}</span>
-                              <span>曝光 {short(item.adHeat)}</span>
-                              <span>播放 {short(item.tkHeat)}</span>
-                            </p>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant={saved ? "secondary" : "outline"}
-                            disabled={saved || savingIdea === item.titleKey}
-                            onClick={() => void onSave(item)}
-                            className="h-7 px-2 text-[10px]"
-                          >
-                            {savingIdea === item.titleKey ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : saved ? (
-                              "已加入"
-                            ) : (
-                              <>
-                                <BookmarkPlus className="mr-1 h-3 w-3" />
-                                加入选题库
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {items.length === 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      本期暂无作品
-                    </p>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">题材组合机会</CardTitle>
-          <p className="mt-1 text-xs text-muted-foreground">
-            从AI样本的标签共现中提取，作为选题会的组合入口。
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {dashboard.genrePairs.slice(0, 6).map((pair, index) => {
-            const ideaTitle = `题材机会｜${pair.name}`;
-            const saved = savedTitles.has(normalizeTitle(ideaTitle));
-            const saving = savingIdea === `genre:${pair.name}`;
-            return (
-              <div
-                key={pair.name}
-                className="flex items-center gap-3 rounded-xl border p-3"
-              >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-primary">
-                  {index + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{pair.name}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    覆盖 {pair.value.toLocaleString()} 条AI记录 · 热度 {short(pair.heat)}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant={saved ? "secondary" : "outline"}
-                  disabled={saved || saving}
-                  onClick={() => void onSaveGenre(pair)}
-                  className="h-8 shrink-0 px-2.5 text-[11px]"
-                >
-                  {saving ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : saved ? (
-                    "已加入"
-                  ) : (
-                    <>
-                      <BookmarkPlus className="mr-1 h-3 w-3" />
-                      加入选题库
-                    </>
-                  )}
-                </Button>
-              </div>
-            );
-          })}
-          {dashboard.genrePairs.length === 0 && (
-            <Empty message="导入带有复合标签的数据后显示题材组合。" />
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }
