@@ -36,7 +36,7 @@ export function boardSamples(imports: Source[], kind: MarketPeriodKind): BoardSa
     if (!rankKey || !titleKey || !tagKey) issues.push('缺少可识别的排名、剧名或标签字段，需核对字段映射')
     if (rows.some((r, i) => metricNumber(r[rankKey]) !== i + 1)) issues.push('原榜名次缺失、重复或不连续，无法确认TopN边界')
     const month = period.match(/^(\d{4})(?:年|-)(\d{1,2})(?:月)?$/)
-    if (month && kind === 'month') {
+    if (month && kind === 'month' && !source.analysis_issues) {
       const boundary = `${month[1]}-${month[2].padStart(2, '0')}`
       const future = source.raw_rows.filter(r => ['上线时间', '首次投放时间'].some(k => /^\d{4}-\d{2}-\d{2}/.test(value(r[k])) && value(r[k]).slice(0,7) > boundary)).length
       if (future) issues.push(`${future}条记录的上线/首投日期晚于统计月，暂停跨期比较，待核验文件月份或元数据`)

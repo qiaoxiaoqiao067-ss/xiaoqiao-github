@@ -10,9 +10,10 @@ test('first load requests selected and comparison periods plus shared title mapp
  assert.deepEqual(requestedImports(all,'2026年10月','2026年9月').map(m=>m.source_name==='中文名映射'?'mapping':m.period_label),['2026年10月','2026年9月','mapping'])
 })
 test('sample response reduces rows without losing original-source quality checks',()=>{
- const s=source('2026年9月'),snap=analysisSnapshot(s)
+ const s=source('2026年9月');s.raw_rows[0].上线时间='2026-11-01';const snap=analysisSnapshot(s)
  assert.equal(snap.rows.length,500);assert.equal(s.raw_rows.length,1000);assert.match(snap.issues.join(''),/晚于统计月/)
  const loaded=boardSamples([{...s,raw_rows:snap.rows,analysis_issues:snap.issues}],'month')
+ assert.deepEqual(loaded[0].issues,snap.issues);assert.match(loaded[0].issues[0],/^2条记录/)
  assert.match(compareBoards(loaded,boardSamples([source('2026年8月')],'month'))[0].reason!,/异常/)
 })
 test('previous-only platforms need metadata, not raw history, to report missing current coverage',()=>{
