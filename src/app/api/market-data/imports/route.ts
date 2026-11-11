@@ -6,12 +6,22 @@ import { requireWorkspaceAccess } from "@/lib/supabase/workspace-access"
 
 export const dynamic = "force-dynamic"
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const { user, response } = await requireUser()
   if (response) return response
   const access = await requireWorkspaceAccess(user.id, "market_data", "view")
   if (!access) return NextResponse.json({ error: "没有市场数据查看权限" }, { status: 403 })
-  const { data, error } = await serviceClient.from("market_data_imports").select("*").eq("user_id", access.ownerId).order("created_at", { ascending: false })
+  const id = request.nextUrl.searchParams.get("id")
+  if (id) {
+    const parsedId = z.string().uuid().safeParse(id)
+    const offset = Number(request.nextUrl.searchParams.get("offset") || 0)
+    if (!parsedId.success || !Number.isInteger(offset) || offset < 0 || offset > 10000) return NextResponse.json({error:"无效的榜单分页参数"},{status:400})
+    const {data,error}=await serviceClient.from("market_data_imports").select("raw_rows,updated_at").eq("id",parsedId.data).eq("user_id",access.ownerId).single()
+    if(error || !data) return NextResponse.json({error:error?.message||"榜单不存在"},{status:404})
+    const rows=Array.isArray(data.raw_rows)?data.raw_rows:[]
+    return NextResponse.json({rows:rows.slice(offset,offset+1000),total:rows.length,updated_at:data.updated_at},{headers:{"Cache-Control":"no-store"}})
+  }
+  const { data, error } = await serviceClient.from("market_data_imports").select("id,user_id,source_name,period_label,file_name,row_count,columns,created_at,updated_at").eq("user_id", access.ownerId).order("created_at", { ascending: false })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ imports: data || [] }, { headers: { "Cache-Control": "no-store" } })
 }

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import { loadImportPages } from "@/lib/market/load-import-pages"
 
 export type MarketDataImport = {
   id: string; user_id: string; source_name: string; period_label: string | null; file_name: string
@@ -34,7 +35,13 @@ export function useMarketDataImports() {
           const response = await fetch("/api/market-data/imports", { cache: "no-store" })
           const payload = await response.json().catch(() => ({}))
           if (response.ok) {
-            setImports((payload.imports || []) as MarketDataImport[])
+            const complete = await loadImportPages((payload.imports || []) as MarketDataImport[], async (id,offset) => {
+              const pageResponse=await fetch(`/api/market-data/imports?id=${encodeURIComponent(id)}&offset=${offset}`,{cache:"no-store",signal:AbortSignal.timeout(45000)})
+              const page=await pageResponse.json().catch(()=>null)
+              if(!pageResponse.ok || !page || !Array.isArray(page.rows)) throw new Error(page?.error||`榜单分批读取失败（HTTP ${pageResponse.status}），请重试。`)
+              return page
+            })
+            setImports(complete)
             return
           }
           lastError = new Error(payload.error || "市场数据读取失败")
