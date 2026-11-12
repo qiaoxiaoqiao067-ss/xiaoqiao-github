@@ -1,5 +1,6 @@
 "use client"
 import {useCallback,useEffect,useState} from 'react'
+import {notifyValidationChanges,watchValidationChanges} from '@/lib/market/validation-events'
 import {Button} from '@/components/ui/button'
 import {marketJson} from './report-library'
 import {MonthlyReviewDetails} from './monthly-review'
@@ -13,11 +14,12 @@ function useIdeaReviews(query:string){
   // eslint-disable-next-line react-hooks/set-state-in-effect
   void load()
  },[load])
+ useEffect(()=>watchValidationChanges(()=>void load()),[load])
  return {records,canEdit,more,loading,error,load,replace:(r:IdeaReviewRecord)=>setRecords(old=>old.map(o=>o.id===r.id?{...r,sourceChanged:o.sourceChanged,currentIdeaTitle:o.currentIdeaTitle}:o))}
 }
-function ValidationEditor({record,action,onSaved,onCancel}:{record:IdeaReviewRecord;action:ValidationAction;onSaved:(r:IdeaReviewRecord)=>void;onCancel:()=>void}){
+export function ValidationEditor({record,action,onSaved,onCancel}:{record:IdeaReviewRecord;action:ValidationAction;onSaved:(r:IdeaReviewRecord)=>void;onCancel:()=>void}){
  const [version]=useState(record.updated_at),[draft,setDraft]=useState(action),[busy,setBusy]=useState(false),[error,setError]=useState('')
- async function save(){const parsed=validationInput.safeParse(draft);if(!parsed.success){setError(parsed.error.issues[0]?.message||'请检查验证内容');return}setBusy(true);setError('');try{const r=await marketJson('/api/market-data/idea-reviews',{operation:'validation',id:record.id,ideaId:record.payload.ideaId,updated_at:version,action:parsed.data},'PATCH');onSaved(r.record)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
+ async function save(){const parsed=validationInput.safeParse(draft);if(!parsed.success){setError(parsed.error.issues[0]?.message||'请检查验证内容');return}setBusy(true);setError('');try{const r=await marketJson('/api/market-data/idea-reviews',{operation:'validation',id:record.id,ideaId:record.payload.ideaId,updated_at:version,action:parsed.data},'PATCH');onSaved(r.record);notifyValidationChanges()}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
  return <div className="space-y-3 rounded-lg border bg-[#f1f7e9] p-3" aria-label={`编辑验证：${action.title}`}>
   <label className="block text-xs">验证事项<input aria-label="验证事项" value={draft.title} maxLength={100} disabled={busy} onChange={e=>setDraft({...draft,title:e.target.value})} className="mt-1 w-full rounded-lg border bg-white p-2"/></label>
   <label className="block text-xs">具体动作与通过条件<textarea aria-label="验证动作" value={draft.description} maxLength={4000} disabled={busy} onChange={e=>setDraft({...draft,description:e.target.value})} className="mt-1 min-h-28 w-full rounded-lg border bg-white p-2 leading-6"/></label>
@@ -29,7 +31,7 @@ function ValidationEditor({record,action,onSaved,onCancel}:{record:IdeaReviewRec
 }
 function IdeaReviewCard({record,canEdit,onSaved}:{record:IdeaReviewRecord;canEdit:boolean;onSaved:(r:IdeaReviewRecord)=>void}){
  const [editing,setEditing]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),p=record.payload,progress=validationProgress(p.actions)
- async function toggle(){setBusy(true);setError('');try{const r=await marketJson('/api/market-data/idea-reviews',{operation:'active',id:record.id,ideaId:p.ideaId,updated_at:record.updated_at,active:!p.active},'PATCH');onSaved(r.record);setMessage(p.active?'已解除关联，依据和进度保留。':'已恢复关联及原验证进度。')}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
+ async function toggle(){setBusy(true);setError('');try{const r=await marketJson('/api/market-data/idea-reviews',{operation:'active',id:record.id,ideaId:p.ideaId,updated_at:record.updated_at,active:!p.active},'PATCH');onSaved(r.record);notifyValidationChanges();setMessage(p.active?'已解除关联，依据和进度保留。':'已恢复关联及原验证进度。')}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
  return <article className="min-w-0 space-y-3 rounded-xl border border-[#b6ce92] bg-white p-4 text-xs leading-6" aria-label={`研判验证：${p.ideaTitle}`}>
   <h5 className="break-words font-semibold text-[#173f31]">{record.currentIdeaTitle||p.ideaTitle}</h5><p>{p.review.payload.period} 对比 {p.review.payload.comparison} · {p.review.payload.genre} · {p.active?'已关联':'已解除'}</p><p className="whitespace-pre-wrap break-words"><strong>用于此选题：</strong>{p.reason}</p>
   <div className="flex flex-wrap justify-between gap-2 font-semibold text-[#19523f]"><span>验证完成 {progress.done}/{progress.total} · {progress.percent}%</span><span>验证中 {progress.inProgress} 项</span></div><div role="progressbar" aria-label="验证完成比例" aria-valuenow={progress.percent} aria-valuemin={0} aria-valuemax={100} className="h-2 overflow-hidden rounded-full bg-[#e5edda]"><div className="h-full bg-[#215e46]" style={{width:`${progress.percent}%`}}/></div>
@@ -55,7 +57,7 @@ function ReviewIdeaPicker({review}:{review:MonthlyReviewRecord}){
   // eslint-disable-next-line react-hooks/set-state-in-effect
   void loadIdeas()
  },[loadIdeas])
- async function save(){setBusy(true);setError('');try{const r=await marketJson('/api/market-data/idea-reviews',{ideaId:selected,reviewId:review.id,reviewVersion:review.updated_at,reason});setMessage(r.existing?'此研判已关联该选题，保留原有依据和验证进度，未重复创建。':'已关联已有选题，三项建议已进入待验证。未新建选题。');await store.load()}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
+ async function save(){setBusy(true);setError('');try{const r=await marketJson('/api/market-data/idea-reviews',{ideaId:selected,reviewId:review.id,reviewVersion:review.updated_at,reason});setMessage(r.existing?'此研判已关联该选题，保留原有依据和验证进度，未重复创建。':'已关联已有选题，三项建议已进入待验证。未新建选题。');notifyValidationChanges();await store.load()}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
  const filtered=ideas.filter(i=>i.title.toLowerCase().includes(search.toLowerCase())||i.id===selected)
  return <section aria-label="关联已有选题与验证" className="mt-3 min-w-0 space-y-3 rounded-xl border bg-[#f1f7e9] p-4 text-xs leading-6"><p>把本条月度建议用于已有选题，保留本次研判与出处。重复关联保留原进度，不会新建选题或改变选题决策。</p>{store.error&&<p role="alert" className="text-red-700">{store.error}</p>}{error&&<p role="alert" className="text-red-700">{error}</p>}{message&&<p role="status">{message}</p>}<Button size="sm" variant="outline" disabled={busy||store.loading} onClick={()=>{void store.load();void loadIdeas()}}>刷新已有选题与验证</Button>
   {store.canEdit&&<><input aria-label="搜索已有选题" placeholder="搜索已有选题名称" value={search} onChange={e=>setSearch(e.target.value)} className="w-full rounded-lg border bg-white p-2"/><select aria-label="月度研判关联选题" disabled={busy} value={selected} onChange={e=>setSelected(e.target.value)} className="w-full min-w-0 max-w-full rounded-lg border bg-white p-2"><option value="">选择已有选题</option>{filtered.map(i=><option key={i.id} value={i.id}>{i.title}</option>)}</select><textarea aria-label="研判用于此选题的依据" placeholder="说明本条建议适用于哪个故事方向，接下来要验证什么。" maxLength={2000} value={reason} disabled={busy} onChange={e=>setReason(e.target.value)} className="min-h-20 w-full rounded-lg border bg-white p-2"/><Button size="sm" disabled={busy||!selected||!reason.trim()||review.sourceChanged} onClick={()=>void save()}>{busy?'正在关联…':'关联所选已有选题'}</Button></>}

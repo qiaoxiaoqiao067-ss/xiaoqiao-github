@@ -27,6 +27,7 @@ import {
 } from "lucide-react"
 import { RecurringManager } from "@/components/tasks/recurring-manager"
 import { AiTaskInbox } from "@/components/tasks/ai-task-inbox"
+import { ValidationTasksPanel } from "@/components/tasks/validation-tasks"
 import { DataError } from "@/components/ui/data-error"
 
 const PRIORITY_MAP: Record<number, { label: string; variant: "default" | "warning" | "destructive" }> = {
@@ -96,6 +97,8 @@ export default function TodosPage() {
           </CardContent></Card>
         )}
 
+        <ValidationTasksPanel />
+
         {/* Error */}
         {error && <DataError error={error} onRetry={refetch} />}
 
@@ -141,7 +144,7 @@ export default function TodosPage() {
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
               <CheckSquare className="h-12 w-12 text-muted-foreground/30 mb-4" />
-              <p className="text-lg font-medium text-muted-foreground">还没有任务</p>
+              <p className="text-lg font-medium text-muted-foreground">还没有手动任务</p>
               <p className="text-sm text-muted-foreground/60 mt-1">
                 在上方输入框添加你的第一个任务
               </p>
