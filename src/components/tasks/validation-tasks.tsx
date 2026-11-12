@@ -41,7 +41,7 @@ export function ValidationTasksPanel(){
 }
 
 export function ValidationReminder({store}:{store:ValidationTaskStore}){
- if(store.unavailable)return null
+ if(!store.homeVisible||store.unavailable)return null
  const pending=store.tasks.filter(t=>t.action.status!=='已完成')
  const groups:ValidationBucket[]=['overdue','today','week','undated']
  return <section aria-label="选题验证提醒" className="rounded-2xl border border-[#b8cfa8] bg-[#f7faf1] px-4 py-3">

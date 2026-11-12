@@ -69,7 +69,7 @@ export default function DashboardPage() {
   const { meetings } = useMeetings()
   const { items: researchItems } = useResearchItems()
   const { ideas } = useIdeas()
-  const validationStore = useValidationTasks()
+  const validationStore = useValidationTasks("home")
   const loading = todosLoading || contentsLoading || projectsLoading
   const today = new Date()
   const todayKey = localDateKey(today)
@@ -126,7 +126,7 @@ export default function DashboardPage() {
   const monthGridStart = startOfWeekMonday(visibleMonth)
   const monthDays = Array.from({ length: 42 }, (_, index) => addDays(monthGridStart, index))
   const calendarItems: CalendarItem[] = [
-    ...validationCalendar(validationStore.tasks),
+    ...(validationStore.homeVisible ? validationCalendar(validationStore.tasks) : []),
     ...activeTodos.filter((item) => item.due_date).map((item) => ({ id: `task-${item.id}`, date: item.due_date!, title: item.title, detail: item.description || item.next_action || "", type: "task" as const, href: "/todos", time: "全天" })),
     ...meetings.filter((item) => item.meeting_date).map((item) => ({ id: `meeting-${item.id}`, date: item.meeting_date!, title: item.title, detail: item.summary || "", type: "meeting" as const, href: "/meetings", time: timeLabel(item.meeting_date!) })),
     ...scheduleEvents,
