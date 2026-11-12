@@ -9,6 +9,7 @@ import { WorkTracking } from "@/components/market/work-tracking";
 import { ResearchArchive } from "@/components/market/research-archive";
 import { BoardComparisons } from "@/components/market/board-comparisons";
 import { BoardPlatforms } from "@/components/market/board-platforms";
+import {knownBoardSignal, displayMetric, displayNumber} from "@/lib/market/display-metrics";
 import { boardSamples, compareBoards } from "@/lib/market/board-analysis";
 import { MarketResearchPanel } from "@/components/market/market-research";
 import { buildMarketResearch, type ResearchFinding } from "@/lib/market/research";
@@ -77,6 +78,7 @@ type Work = {
   platforms: string[];
   rank: number | null;
   heat: number | null;
+  metric: string;
   period: string;
   sourceId: string;
   boardKey: string;
@@ -186,14 +188,8 @@ const STANDARD_GENRES = ["情感", "家庭", "豪门", "都市", "甜宠", "虐�
 function text(value: unknown) {
   return String(value ?? "").trim();
 }
-function numeric(value: unknown) {
-  const raw = text(value).replace(/,/g, "");
-  const plain = Number(raw);
-  if (Number.isFinite(plain)) return plain;
-  const number = Number.parseFloat(raw.replace(/[^\d.-]/g, ""));
-  if (Number.isNaN(number)) return null;
-  return /亿/.test(raw) ? number * 1e8 : /万/.test(raw) ? number * 1e4 : number;
-}
+const numeric = displayNumber;
+
 function keyFor(row: Record<string, unknown>, test: RegExp) {
   return Object.keys(row).find((key) => test.test(key));
 }
@@ -230,7 +226,7 @@ function platformForFile(fileName: string) {
   return CORE_PLATFORMS.find((name) => fileName.toLowerCase().includes(name.toLowerCase())) || "";
 }
 function signalForFile(fileName: string, columns: string[]): Signal {
-  return platformForFile(fileName) ? "platform" : signalFor(columns);
+  return knownBoardSignal(fileName) || (platformForFile(fileName) ? "platform" : signalFor(columns));
 }
 function platformName(
   value: string,
@@ -374,6 +370,7 @@ function analyze(
   for (const source of marketImports) {
     const signal = signalForFile(source.file_name, source.columns),
       seen = new Set<string>();
+    const sourceMetric = displayMetric(signal,source.raw_rows?.[0] || {});
     let sumHeat = 0;
     let hasHeat = false;
     let aiRows = 0;
@@ -389,7 +386,7 @@ function analyze(
         genreKey = mappedKeyFor(row, GENRE, fieldRoleMap, "genre"),
         platformKeys = mappedKeysFor(row, PLATFORM, fieldRoleMap, "platform"),
         rankKey = mappedKeyFor(row, RANK, fieldRoleMap, "rank"),
-        heatKey = signal === "tk" || signal === "platform" ? keyFor(row, /^播放增量$/) : signal === "ad" ? keyFor(row, /^预估曝光$/) : undefined;
+        heatKey = sourceMetric || undefined;
       [titleKey, titleCnKey, genreKey, ...platformKeys, rankKey, heatKey]
         .filter(Boolean)
         .forEach((key) => fields.add(key as string));
@@ -486,13 +483,14 @@ function analyze(
             platforms: rowPlatforms.length ? rowPlatforms : [platform],
             rank,
             heat,
+            metric: sourceMetric,
             period: source.period_label || "未标记统计期",
             sourceId: source.id,
             boardKey: marketBoardKey(source.source_name, source.file_name),
             signal,
           });
         else {
-          old.heat = (old.heat || 0) + (heat || 0);
+          old.heat = old.heat === null && heat === null ? null : (old.heat || 0) + (heat || 0);
           old.platforms = [
             ...new Set([...old.platforms, ...rowPlatforms]),
           ];
@@ -517,13 +515,8 @@ function analyze(
           ? "素材/投放势能"
           : signal === "tk"
             ? "热播/扩散势能"
-          : signal === "platform" ? "平台播放增量" : "市场样本",
-      heatLabel:
-        signal === "ad"
-          ? "预估曝光合计"
-          : signal === "tk" || signal === "platform"
-            ? "播放增量合计"
-            : "热度合计",
+          : signal === "platform" ? `平台${sourceMetric || "榜单"}` : "市场样本",
+      heatLabel: sourceMetric ? `${sourceMetric}合计` : "无指标",
     });
   }
   const order = (map: Map<string, Bucket>) =>
@@ -969,9 +962,10 @@ export default function MarketDataPage() {
           ? "广告投放"
           : work.signal === "tk"
             ? "TikTok播放"
-            : work.signal === "platform" ? "平台播放增量" : "市场样本",
+            : work.signal === "platform" ? `平台${work.metric || "榜单"}` : "市场样本",
       排名: work.rank,
-      热度: work.heat,
+      指标: work.metric,
+      数值: work.heat,
     }));
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
@@ -1079,7 +1073,7 @@ export default function MarketDataPage() {
           ? "广告投放"
           : work.signal === "tk"
             ? "TikTok播放"
-            : work.signal === "platform" ? "平台播放增量" : "市场样本",
+            : work.signal === "platform" ? `平台${work.metric || "榜单"}` : "市场样本",
       统计期: work.period,
     }));
     const book = XLSX.utils.book_new();
@@ -1756,7 +1750,7 @@ export default function MarketDataPage() {
                 { value: "all", label: "全部信号" },
                 { value: "ad", label: "广告投放" },
                 { value: "tk", label: "TikTok播放" },
-                { value: "platform", label: "12个平台播放榜" },
+                { value: "platform", label: "12个平台榜单" },
               ]}
             />
             <Filter
@@ -1906,7 +1900,7 @@ export default function MarketDataPage() {
                                   ? "投放"
                                   : work.signal === "tk"
                                     ? "播放"
-                                    : work.signal === "platform" ? "平台播放" : "市场"}
+                                    : work.signal === "platform" ? `平台${work.metric || "榜单"}` : "市场"}
                               </Badge>
                             </td>
                             <td className="py-3 text-right text-xs font-semibold text-primary">
@@ -1917,7 +1911,7 @@ export default function MarketDataPage() {
                                   : "—"}
                               {work.heat !== null && work.rank !== null ? (
                                 <span className="mt-0.5 block text-[10px] font-normal text-muted-foreground">
-                                  {short(work.heat)}
+                                  {work.metric} {short(work.heat)}
                                 </span>
                               ) : null}
                             </td>
@@ -2936,7 +2930,7 @@ function WorkDetail({ work, onClose }: { work: Work; onClose: () => void }) {
               ? "广告投放信号"
               : work.signal === "tk"
                 ? "TikTok播放信号"
-                : work.signal === "platform" ? "平台播放增量信号" : "市场信号"}
+                : work.signal === "platform" ? `平台${work.metric || "榜单"}信号` : "市场信号"}
           </p>
         </div>
         <Button size="icon" variant="ghost" onClick={onClose}>
@@ -2975,7 +2969,7 @@ function WorkDetail({ work, onClose }: { work: Work; onClose: () => void }) {
           </div>
           <div className="rounded-xl bg-background p-3">
             <p className="text-xs text-muted-foreground">
-              {work.signal === "ad" ? "预估曝光" : "播放增量"}
+              {work.metric || "指标未提供"}
             </p>
             <p className="mt-1 text-xl font-semibold">
               {work.heat === null ? "—" : short(work.heat)}
