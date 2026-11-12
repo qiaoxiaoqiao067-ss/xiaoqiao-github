@@ -3,6 +3,7 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { AppLayout } from "@/components/layout/app-layout";
+import { DailySyncStatusPanel } from "@/components/market/daily-sync-status";
 import { MonthlyTrends } from "@/components/market/monthly-trends";
 import { WorkTracking } from "@/components/market/work-tracking";
 import { ResearchArchive } from "@/components/market/research-archive";
@@ -144,6 +145,7 @@ function isMarketImport(item: MarketDataImport) {
   return (
     item.source_name !== "中文名映射" &&
     !item.source_name.startsWith("ADX日报:") &&
+    !item.source_name.startsWith("ADX同步:") &&
     !item.source_name.startsWith("市场研究:") &&
     !item.source_name.startsWith("外部信号:") &&
     !item.source_name.startsWith(VERSION_MARKER_PREFIX)
@@ -1438,6 +1440,7 @@ export default function MarketDataPage() {
           }
         />
         <MarketViewTabs activeView={activeView} onChange={setActiveView} />
+        <DailySyncStatusPanel onRefresh={refetch} onOpen={(day)=>{setPeriod(day);setComparisonChoice("");setActiveView("overview");}} />
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#d7e4c8] bg-white p-4">
           <div><p className="text-sm font-semibold text-[#173f31]">每来源 · 每榜单：日50 / 周300 / 月500</p><p className="mt-1 text-xs text-muted-foreground">按原榜排名先取TopN，再分析其中AI仿真人条目；不会向榜外补足AI数量。</p></div>
           <label className="flex items-center gap-2 text-xs text-[#61766b]">统计期

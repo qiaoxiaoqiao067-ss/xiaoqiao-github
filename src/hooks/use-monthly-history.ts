@@ -1,13 +1,13 @@
 "use client"
 import {useEffect,useMemo,useRef,useState} from 'react'
 import type {MarketDataImport} from './use-market-data-imports'
-import {historyRequests, monthlySeries} from '@/lib/market/monthly-history'
+import {historyRequests, monthlySeries, dailyHistoryRequests, dailySeries} from '@/lib/market/monthly-history'
 import {loadImportPages} from '@/lib/market/load-import-pages'
 
-export function useMonthlyHistory(metadata:MarketDataImport[],months:string[],board:string){
+function useBoardHistory(metadata:MarketDataImport[],months:string[],board:string,kind:'month'|'day'){
   const cache=useRef(new Map<string,MarketDataImport>())
-  const requested=useMemo(()=>historyRequests(metadata,months,board),[metadata,months,board])
-  const key=JSON.stringify([board,months,requested.map(i=>[i.id,i.updated_at])])
+  const requested=useMemo(()=>(kind==='month'?historyRequests:dailyHistoryRequests)(metadata,months,board),[metadata,months,board,kind])
+  const key=JSON.stringify([kind,board,months,requested.map(i=>[i.id,i.updated_at])])
   const [retry,setRetry]=useState(0)
   const [result,setResult]=useState<{key:string;items:MarketDataImport[];error:string|null}>({key:'',items:[],error:null})
   useEffect(()=>{
@@ -29,6 +29,9 @@ export function useMonthlyHistory(metadata:MarketDataImport[],months:string[],bo
     })()
     return()=>controller.abort()
   },[key,retry,requested])
-  const series=useMemo(()=>monthlySeries(result.key===key?result.items:[],months,board),[result,key,months,board])
+  const series=useMemo(()=>(kind==='month'?monthlySeries:dailySeries)(result.key===key?result.items:[],months,board),[result,key,months,board,kind])
   return {series,loading:result.key!==key,error:result.key===key?result.error:null,reload:()=>setRetry(v=>v+1)}
 }
+
+export function useMonthlyHistory(metadata:MarketDataImport[],months:string[],board:string){return useBoardHistory(metadata,months,board,'month')}
+export function useDailyHistory(metadata:MarketDataImport[],days:string[],board:string){return useBoardHistory(metadata,days,board,'day')}

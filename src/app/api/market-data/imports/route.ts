@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     if (Buffer.byteLength(JSON.stringify(page),"utf8") > 2_000_000) return NextResponse.json({error:"单条榜单记录过大，请检查导入文件。"},{status:413})
     return NextResponse.json({rows:page,total:rows.length,updated_at:data.updated_at,analysis_issues:snapshot.issues},{headers:{"Cache-Control":"no-store"}})
   }
-  const { data, error } = await serviceClient.from("market_data_imports").select("id,user_id,source_name,period_label,file_name,row_count,columns,created_at,updated_at").eq("user_id", access.ownerId).not("source_name","like","ADX日报:%").not("source_name","like","市场研究:%").order("created_at", { ascending: false })
+  const { data, error } = await serviceClient.from("market_data_imports").select("id,user_id,source_name,period_label,file_name,row_count,columns,created_at,updated_at").eq("user_id", access.ownerId).not("source_name","like","ADX日报:%").not("source_name","like","ADX同步:%").not("source_name","like","市场研究:%").order("created_at", { ascending: false })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ imports: data || [] }, { headers: { "Cache-Control": "no-store" } })
 }

@@ -1,5 +1,6 @@
 "use client"
 import {useMemo,useState} from 'react'
+import {DailyWorkHistory} from './daily-work-history'
 import {Button} from '@/components/ui/button'
 import type {MarketDataImport} from '@/hooks/use-market-data-imports'
 import {useMonthlyHistory} from '@/hooks/use-monthly-history'
@@ -18,7 +19,10 @@ function WatchDetail({record,imports,period,canEdit,onSaved}:{record:ResearchRec
   return <div className="space-y-3 border-t pt-3">
     <p className="break-all text-xs text-muted-foreground">开始追踪于{record.created_at.slice(0,10)} · 首次依据：{w.startedPeriod}，原榜第{w.initialRank}名 · {w.source.file_name}</p>
     <p className="text-xs text-amber-800">仅匹配同榜、原名和同剧场号，不自动合并译名或不同账号；同名仍需人工核验版本。名次是原榜名次，指标不跨榜相加。</p>
+    <DailyWorkHistory imports={imports} period={period} work={w}/>
+    <details><summary className="cursor-pointer text-sm font-medium text-[#315f4a]">月度记录（截至{end}）</summary>
     {history.loading?<p role="status">正在读取作品月度记录…</p>:history.error?<div role="alert">{history.error}<Button variant="outline" onClick={history.reload}>重试</Button></div>:<div className="overflow-x-auto"><table className="w-full min-w-[500px] text-left text-xs"><thead><tr className="border-b"><th>月份</th><th>名次</th><th>指标</th><th>状态 / 标签</th></tr></thead><tbody>{observations.map(o=><tr key={o.month} className="border-b"><td className="py-3">{o.month}</td><td>{o.rank??'—'}</td><td>{o.value===null?'—':`${o.metric} ${o.value.toLocaleString()}`}</td><td className="max-w-[220px]">{o.state}{o.tags&&` · ${o.tags}`}</td></tr>)}</tbody></table></div>}
+    </details>
     <label className="block text-xs">追踪状态<select aria-label="作品追踪状态" disabled={!canEdit||busy} value={status} onChange={e=>setStatus(e.target.value as WatchRecord['status'])} className="ml-2 rounded-lg border bg-white p-2">{['观察中','优先拆解','暂停观察','已归档'].map(s=><option key={s}>{s}</option>)}</select></label>
     <label className="block text-xs">跟进笔记<textarea aria-label="作品跟进笔记" disabled={!canEdit||busy} maxLength={10000} value={note} onChange={e=>setNote(e.target.value)} placeholder="记录看片结论、标签核验、下一步，不自动编造剧情。" className="mt-2 min-h-24 w-full rounded-xl border bg-white p-3 text-sm"/></label>
     {canEdit&&<Button size="sm" disabled={busy} onClick={()=>void save()}>{busy?'保存中…':'保存追踪'}</Button>}{message&&<p role="status" className="text-sm">{message}</p>}

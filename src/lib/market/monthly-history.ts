@@ -80,3 +80,29 @@ export function describeContinuity(points:ReturnType<typeof genreTimeline>['poin
   if(range<=5)return {title:'近三月相对稳定',text:'最近三个月占比的最高与最低相差不超过5个百分点，暂未出现持续扩张或收缩。',action:'保留常规观察，优先研究具体作品差异，不因单月小幅变化扩大收稿。'}
   return {title:'月度波动，方向待验证',text:'最近三个月未形成连续两次至少3个百分点的同向变化，需结合作品和标签核验。',action:'追踪贡献变化的具体作品，待下一月同口径数据验证后再调整选题优先级。'}
 }
+
+export function dayKey(label:string) {
+  const m=label.match(/^(\d{4})(?:年|-)(\d{1,2})(?:月|-)(\d{1,2})日?$/)
+  if(!m)return null
+  const key=`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`
+  return Number.isFinite(Date.parse(key))&&new Date(key).toISOString().slice(0,10)===key?key:null
+}
+export function dayRange(end:string,count:number){const key=dayKey(end);if(!key)return [];return Array.from({length:Math.min(30,Math.max(1,count))},(_,i)=>new Date(Date.parse(key)-(count-1-i)*86400000).toISOString().slice(0,10))}
+export function dailyHistoryRequests<T extends ImportMeta>(imports:T[],days:string[],board:string){return imports.filter(i=>days.includes(dayKey(i.period_label||'')||'')&&(i.source_name.startsWith('市场版本:')||isBoardImport(i)&&marketBoardKey(i.source_name,i.file_name)===board))}
+export function dailySeries(imports:Source[],days:string[],board:string){
+ return days.map(day=>{
+   const items=imports.filter(i=>dayKey(i.period_label||'')===day)
+   const marker=items.filter(i=>i.source_name.startsWith('市场版本:')).sort((a,b)=>b.created_at.localeCompare(a.created_at))[0]
+   const version=String(marker?.raw_rows[0]?.version_id||'legacy')
+   const active=items.filter(i=>isBoardImport(i)&&(i.source_name.startsWith('ADX版本:')?i.source_name.slice('ADX版本:'.length):'legacy')===version)
+   return {month:day,sample:boardSamples(active,'day').find(s=>s.key===board)}
+ })
+}
+export function dailyWorkObservations(series:MonthPoint[],title:string,channel:string){
+ const points=workObservations(series,title,channel)
+ return points.map((p,i)=>{
+   const previous=points[i-1],a=series[i-1]?.sample,b=series[i]?.sample
+   const comparable=previous?.rank!==null&&p.rank!==null&&a&&b&&a.metric===b.metric&&a.sort===b.sort&&a.scope===b.scope&&Date.parse(p.month)-Date.parse(previous.month)===86400000
+   return {...p,rankChange:comparable?previous.rank!-p.rank!:null}
+ })
+}

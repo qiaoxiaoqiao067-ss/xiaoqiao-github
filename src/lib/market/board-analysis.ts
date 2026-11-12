@@ -3,7 +3,7 @@ import { latestBoardImports, marketBoardKey, MARKET_SAMPLE_LIMITS, sampleMarketR
 type Row = Record<string, unknown>
 type Source = { id?: string; source_name: string; file_name: string; period_label: string | null; created_at: string; raw_rows: Row[]; analysis_issues?: string[]; columns?: string[] }
 export type BoardSample = {
-  sourceId?: string; key: string; name: string; period: string; rows: Row[]; ai: Row[]; metric: string | null
+  sort?: string; scope?: string; sourceId?: string; key: string; name: string; period: string; rows: Row[]; ai: Row[]; metric: string | null
   issues: string[]; rankKey: string; titleKey: string; tagKey: string; channelKey?: string
 }
 export type BoardComparison = {
@@ -32,20 +32,24 @@ export function boardSamples(imports: Source[], kind: MarketPeriodKind): BoardSa
     const key = marketBoardKey(source.source_name, source.file_name)
     const period = source.period_label || ''
     const rows = sampleMarketRows(source.raw_rows, kind, r => metricNumber(r[rankKey]))
+    const sort=value(source.raw_rows[0]?.['采集排序'])||undefined
+    const scope=value(source.raw_rows[0]?.['采集筛选'])||undefined
     const issues: string[] = [...(source.analysis_issues || [])]
+    const captureIssue=value(source.raw_rows[0]?.['采集校验']);if(captureIssue)issues.push(captureIssue)
     if (!rankKey || !titleKey || !tagKey) issues.push('缺少可识别的排名、剧名或标签字段，需核对字段映射')
     if (rows.some((r, i) => metricNumber(r[rankKey]) !== i + 1)) issues.push('原榜名次缺失、重复或不连续，无法确认TopN边界')
     const month = period.match(/^(\d{4})(?:年|-)(\d{1,2})(?:月)?$/)
-    if (month && kind === 'month' && !source.analysis_issues) {
-      const boundary = `${month[1]}-${month[2].padStart(2, '0')}`
-      const future = source.raw_rows.filter(r => ['上线时间', '首次投放时间'].some(k => /^\d{4}-\d{2}-\d{2}/.test(value(r[k])) && value(r[k]).slice(0,7) > boundary)).length
-      if (future) issues.push(`${future}条记录的上线/首投日期晚于统计月，暂停跨期比较，待核验文件月份或元数据`)
+    const day=kind==='day'&&/^\d{4}-\d{2}-\d{2}$/.test(period)?period:null
+    if ((month && kind === 'month' || day) && !source.analysis_issues) {
+      const boundary = day || `${month![1]}-${month![2].padStart(2, '0')}`
+      const future = source.raw_rows.filter(r => ['上线时间', '首次投放时间'].some(k => /^\d{4}-\d{2}-\d{2}/.test(value(r[k])) && value(r[k]).slice(0,boundary.length) > boundary)).length
+      if (future) issues.push(`${future}条记录的上线/首投日期晚于统计${day?'日':'月'}，暂停跨期比较，待核验文件日期或元数据`)
     }
     if (/(周榜|日榜)/.test(source.file_name) && kind === 'month' || /周榜/.test(source.file_name) && kind === 'day') issues.push('文件名榜单周期与导入周期不一致')
-    const metric = key.endsWith('short-drama') ? (keys.includes('新素材数') ? '新素材数' : null)
+    const metric = sort && ['总素材数','新素材数','播放增量','热度'].includes(sort) ? sort : key.endsWith('short-drama') ? (keys.includes('新素材数') ? '新素材数' : null)
       : keys.includes('播放增量') && rows.some(r => metricNumber(r['播放增量']) !== null) ? '播放增量'
       : keys.includes('热度') ? '热度' : null
-    return { sourceId: source.id, key, name: source.file_name, period, rows, ai: rows.filter(r => tags(r,tagKey).includes('AI仿真人')), metric, issues:[...new Set(issues)], rankKey, titleKey, tagKey, channelKey }
+    return { sort, scope, sourceId: source.id, key, name: source.file_name, period, rows, ai: rows.filter(r => tags(r,tagKey).includes('AI仿真人')), metric, issues:[...new Set(issues)], rankKey, titleKey, tagKey, channelKey }
   }).filter(s => s.titleKey || s.rankKey)
 }
 function genreCounts(sample: BoardSample, rows: Row[]) {
@@ -63,7 +67,7 @@ export function compareBoards(current: BoardSample[], previous: BoardSample[]): 
   return [...new Set([...current,...previous].map(s => s.key))].map(key => {
     const a = current.find(s => s.key===key), b = previous.find(s => s.key===key)
     const n = Math.min(a?.rows.length || 0,b?.rows.length || 0)
-    const reason = !a ? '本期未采集，不代表零表现' : !b ? '对比期未采集，暂不计算变化' : a.issues.length || b.issues.length ? '存在日期或字段异常，先核验来源' : a.metric !== b.metric ? '两期指标不同，暂停比较' : !n ? '暂无可比较记录' : null
+    const reason = !a ? '本期未采集，不代表零表现' : !b ? '对比期未采集，暂不计算变化' : a.issues.length || b.issues.length ? '存在日期或字段异常，先核验来源' : a.sort !== b.sort || a.scope !== b.scope ? '两期排序或筛选口径未确认一致，暂停比较' : a.metric !== b.metric ? '两期指标不同，暂停比较' : !n ? '暂无可比较记录' : null
     const aa = a?.ai.filter(r => (metricNumber(r[a.rankKey]) || Infinity)<=n) || []
     const bb = b?.ai.filter(r => (metricNumber(r[b.rankKey]) || Infinity)<=n) || []
     const ag = a ? genreCounts(a,aa) : {works:0, counts:new Map<string,number>()}

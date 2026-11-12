@@ -7,7 +7,7 @@ export function comparisonPeriod(metadata:ImportMeta[],period:string,choice:stri
   const periods=[...new Set(metadata.filter(isBoardImport).map(s=>s.period_label).filter((s):s is string=>!!s))].filter(p=>periodKind(p)===periodKind(period)&&p!==period)
   return periods.includes(choice)?choice:periods.filter(p=>periodOrder(p)<periodOrder(period)).sort((a,b)=>periodOrder(b)-periodOrder(a))[0]||''
 }
-export function isBoardImport(item:{source_name:string}) { return item.source_name!=='中文名映射'&&!/^(外部信号:|市场版本:|ADX日报:|市场研究:)/.test(item.source_name) }
+export function isBoardImport(item:{source_name:string}) { return item.source_name!=='中文名映射'&&!/^(外部信号:|市场版本:|ADX日报:|ADX同步:|市场研究:)/.test(item.source_name) }
 export function requestedImports<T extends ImportMeta>(metadata:T[],period:string,comparison:string) {
   const currentKeys=new Set(metadata.filter(m=>m.period_label===period&&isBoardImport(m)).map(m=>marketBoardKey(m.source_name,m.file_name)))
   return metadata.filter(m=>m.source_name==='中文名映射'||m.period_label===period||!!comparison&&m.period_label===comparison&&(!isBoardImport(m)||currentKeys.has(marketBoardKey(m.source_name,m.file_name))))
