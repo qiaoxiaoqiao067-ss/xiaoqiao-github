@@ -1,3 +1,5 @@
+import {readMonthlyReviews} from '@/lib/market/monthly-review-server'
+import {applyMonthlyReviews,reviewApplies} from '@/lib/market/monthly-review'
 import {NextRequest,NextResponse} from 'next/server'
 import {createHash} from 'node:crypto'
 import {requireUser} from '@/lib/supabase/require-user'
@@ -56,7 +58,7 @@ export async function POST(request:NextRequest){
       const allSources=directory.map(i=>({...i,raw_rows:[],...data.find(d=>d.id===i.id)}))
       const current=activeMonthlySources(allSources,monthKey(input.period)!),previous=activeMonthlySources(allSources,monthKey(input.comparison)||'')
       const currentSamples=boardSamples(current,'month'),previousSamples=boardSamples(previous,'month')
-      const research=buildMarketResearch(currentSamples,compareBoards(currentSamples,previousSamples))
+      let research=buildMarketResearch(currentSamples,compareBoards(currentSamples,previousSamples))
       if(!research.findings.length)return fail('当前没有可归档的有效研判，请先补齐或核验数据')
       let evidence:ReturnType<typeof freezeEvidence>=[]
       if(input.evidenceSources.length){
@@ -64,8 +66,14 @@ export async function POST(request:NextRequest){
         if(res.error)throw res.error
         try{evidence=freezeEvidence((res.data||[]).map(record) as EvidenceRecord[],input.evidenceSources,input.period)}catch(e){return fail((e as Error).message,409)}
       }
+      if(input.reviewSources.length){
+        const records=await readMonthlyReviews(owner,input.period,input.comparison)
+        const selected=input.reviewSources.map(ref=>records.find(r=>r.id===ref.id&&r.updated_at===ref.updated_at))
+        if(new Set(input.reviewSources.map(r=>r.id)).size!==selected.length||selected.some(r=>!r||!research.findings.some(f=>reviewApplies(r,f,input.period,input.comparison))))return fail('联合研判或其证据已变化，请刷新后再存档',409)
+        research=applyMonthlyReviews(research,selected.filter(r=>!!r),input.period,input.comparison)
+      }
       id=stableId(`${owner}:archive:${input.requestId}`);source=ARCHIVE_SOURCE;period=input.period
-      payload={kind:'archive',title:input.title,period,comparison:input.comparison,note:input.note,research,sources:directory.map(i=>({id:i.id,file_name:i.file_name,period_label:i.period_label,updated_at:i.updated_at})),actor:ctx.user!.id,rulesVersion:'monthly-research-2026-11-12-v1',evidence}
+      payload={kind:'archive',title:input.title,period,comparison:input.comparison,note:input.note,research,sources:directory.map(i=>({id:i.id,file_name:i.file_name,period_label:i.period_label,updated_at:i.updated_at})),actor:ctx.user!.id,rulesVersion:'monthly-research-2026-11-12-v2-evidence',evidence}
     }
     const {data,error}=await serviceClient.from('market_data_imports').insert({id,user_id:owner,source_name:source,period_label:period,file_name:payload.title,row_count:1,columns:[],raw_rows:[payload]}).select(fields).single()
     if(error?.code==='23505'){

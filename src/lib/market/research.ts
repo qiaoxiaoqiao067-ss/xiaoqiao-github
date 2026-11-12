@@ -1,3 +1,4 @@
+import type {MonthlyReviewRecord} from './monthly-review'
 import { metricNumber, type BoardComparison, type BoardSample } from './board-analysis'
 
 export type ResearchCase = {
@@ -5,7 +6,7 @@ export type ResearchCase = {
   metric: string; value: number | null; regions: string
 }
 export type ResearchFinding = {
-  id: string; genre: string; title: string; decision: string; facts: string[]
+  reviewNotice?: string; review?: MonthlyReviewRecord; id: string; genre: string; title: string; decision: string; facts: string[]
   judgment: string; development: string; advertising: string; validation: string
   cases: ResearchCase[]; cautions: string[]
 }

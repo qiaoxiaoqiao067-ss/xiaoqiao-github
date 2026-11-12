@@ -1,5 +1,9 @@
 "use client";
 
+import {useMonthlyReviews} from '@/hooks/use-monthly-reviews';
+import {applyMonthlyReviews,reviewText} from '@/lib/market/monthly-review';
+import {marketJson} from '@/components/market/report-library';
+import {MonthlyReviewControl} from '@/components/market/monthly-review';
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { AppLayout } from "@/components/layout/app-layout";
@@ -727,7 +731,8 @@ export default function MarketDataPage() {
   const currentBoards = useMemo(() => boardSamples(periodImports.filter(isMarketImport), periodKindFor(period)), [periodImports, period]);
   const previousBoards = boardSamples(activeImportsForPeriod(imports, previousPeriod).filter(isMarketImport), periodKindFor(period));
   const boardComparisons = compareBoards(currentBoards, previousBoards);
-  const marketResearch = buildMarketResearch(currentBoards, boardComparisons);
+  const monthlyReviews = useMonthlyReviews(periodKindFor(period)==="month"?period:"", previousPeriod);
+  const marketResearch = applyMonthlyReviews(buildMarketResearch(currentBoards, boardComparisons), monthlyReviews.records, period, previousPeriod);
   const periodGroups = useMemo(
     () => ({
       month: periodOptions.filter((item) => periodKindFor(item) === "month").sort(comparePeriods),
@@ -942,11 +947,17 @@ export default function MarketDataPage() {
     if (researchSaved(item) || savingIdea) return;
     setSavingIdea(item.id);
     try {
-      await addIdea({
+      const created=await addIdea({
         title: researchTitle(item), source: `市场研判 · ${period} 对比 ${previousPeriod || "无历史"}`,
         market: "目标市场待核验", genre: item.genre, status: "待评估",
-        notes: ["研究建议，未经剧情及商业效果验证。", ...item.facts, `判断：${item.judgment}`, `开发：${item.development}`, `投放测试：${item.advertising}`, `复核条件：${item.validation}`, ...item.cautions, ...item.cases.map(c => `对标：${c.title}｜${c.period}｜${c.source}｜原榜${c.rank}｜${c.metric} ${c.value ?? "未提供"}｜${c.channel}｜${c.regions}`)].join("\n"),
+        notes: [...(item.review?[reviewText(item.review)]:[]),"研究建议，未经剧情及商业效果验证。", ...item.facts, `判断：${item.judgment}`, `开发：${item.development}`, `投放测试：${item.advertising}`, `复核条件：${item.validation}`, ...item.cautions, ...item.cases.map(c => `对标：${c.title}｜${c.period}｜${c.source}｜原榜${c.rank}｜${c.metric} ${c.value ?? "未提供"}｜${c.channel}｜${c.regions}`)].join("\n"),
       });
+      if(item.review){
+        for(const ref of item.review.payload.evidence){
+          try{await marketJson('/api/market-data/idea-evidence',{ideaId:created.id,evidenceId:ref.evidence.id,evidenceVersion:ref.evidence.updated_at,purpose:ref.relation==='提示反例'?'提示风险':ref.relation==='支持判断'?'支持选题':'背景参考',reason:`${period}报告联合研判：${ref.independence}。${item.review.payload.topicBrief}`.slice(0,1000)})}
+          catch(error){setMessage(`选题已保存（含研判正文），但证据关联未完成：${error instanceof Error?error.message:'请在选题的市场证据中重新关联'}`);return}
+        }
+      }
       setMessage(`已保存“${item.genre}”研究方向到选题情报，状态为待评估。`);
     } catch (caught) { setMessage(caught instanceof Error ? caught.message : "保存研究方向失败"); }
     finally { setSavingIdea(""); }
@@ -997,7 +1008,7 @@ export default function MarketDataPage() {
         { 项目: "AI仿真人样本", 内容: `${dashboard.totalRows.toLocaleString()} 条记录；${dashboard.totalWorks.toLocaleString()} 个去重作品` },
         { 项目: "双信号验证", 内容: `${dashboard.overlapCount.toLocaleString()} 个严格同名作品` },
         { 项目: "对比期", 内容: previousPeriod || "无历史数据" },
-        ...marketResearch.findings.map(f => ({ 项目: f.title, 内容: [f.facts.join("；"), f.judgment, f.development].join("\n") })),
+        ...marketResearch.findings.map(f => ({ 项目: f.title, 内容: [f.facts.join("；"), f.review?.payload.conclusion||f.judgment, f.review?.payload.topicBrief||f.development].join("\n") })),
         { 项目: "证据缺口", 内容: marketResearch.limitations.join("\n") },
         { 项目: "研究筛选规则", 内容: marketResearch.method },
         { 项目: "口径与风险", 内容: "每来源、每榜单日50/周300/月500；基于当前样本，不等于整个市场。广告预估曝光与TikTok播放增量分开呈现。" },
@@ -1047,14 +1058,16 @@ export default function MarketDataPage() {
     );
     append(
       "研究行动",
-      marketResearch.findings.map(f => ({ 方向: f.title, 决定: f.decision, 榜单依据: f.facts.join("\n"), 判断: f.judgment, 开发动作: f.development, 投放测试: f.advertising, 复核条件: f.validation, 风险: f.cautions.join("\n") })),
+      marketResearch.findings.map(f => ({ 方向: f.title, 决定: f.decision, 榜单依据: f.facts.join("\n"), 判断: f.review?.payload.conclusion||f.judgment, 开发动作: f.review?.payload.topicBrief||f.development, 投放测试: f.review?.payload.testPlan||f.advertising, 复核条件: f.review?.payload.revisit||f.validation, 风险: f.cautions.join("\n") })),
       [32, 18, 70, 60, 70, 70, 70, 60],
     );
+    const reportRows=marketResearch.findings.flatMap(f=>f.review?f.review.payload.evidence.map((r,i)=>({研究方向:f.genre,引用:`报告${i+1}`,关系:r.relation,独立性:r.independence,标题:r.evidence.payload.title,来源:r.evidence.payload.source,位置:r.evidence.payload.locator,范围:r.evidence.payload.scope,原文:r.evidence.payload.excerpt,证据编号:r.evidence.id,版本:r.evidence.updated_at})):[]);
+    if(reportRows.length)append("报告研判依据",reportRows,[20,12,15,15,35,45,40,60,80,40,30]);
     if (externalSignals.length) {
       append("外部信号旁证", externalSignals.map((item) => ({ 来源: item.source, 统计期: item.period, 话题或作品: item.topic, 指标: item.metric, 数值: item.value, 环比变化: item.change, 证据链接: item.url, 备注: item.note, 口径提醒: "外部旁证，不与ADX指标混算" })), [22, 15, 32, 24, 16, 16, 45, 45, 30]);
     }
     XLSX.writeFile(book, `海外AI短剧市场简报_${period.replace(/\s+/g, "")}.xlsx`);
-    setMessage(`已生成“${period}”市场简报，共 ${externalSignals.length ? 7 : 6} 个工作表。`);
+    setMessage(`已生成“${period}”市场简报，共 ${book.SheetNames.length} 个工作表。`);
   };
   const exportMissingChineseNames = () => {
     const rows = [
@@ -1730,6 +1743,7 @@ export default function MarketDataPage() {
             </Button>
           </div>
         )}
+        {!error && activeView === "overview" && monthlyReviews.error && <p role="alert">{monthlyReviews.error}；暂显示榜单判断。<Button variant="outline" onClick={monthlyReviews.refresh}>重试联合研判</Button></p>}
         {!error && activeView === "overview" && <MonitorOverview data={dashboard} research={marketResearch} kind={periodKindFor(period)} period={period} loading={loading} onCollect={() => setActiveView("data")} onInspect={(mode) => { setActiveView("analysis"); setAnalysisMode(mode); }} />}
         {activeView === "analysis" && loading && <p role="status" className="rounded-2xl border bg-white p-6 text-sm text-muted-foreground">正在按需读取所选周期，完成后统一更新比较结果…</p>}
         {!loading && !error && activeView === "analysis" && (
@@ -2006,8 +2020,8 @@ export default function MarketDataPage() {
         )}
         {analysisMode === "production" && (
           <div className="space-y-6">
-            <MarketResearchPanel research={marketResearch} onSave={saveResearch} saved={researchSaved} saving={savingIdea} />
-            <ResearchArchive imports={imports} period={period} comparison={previousPeriod} />
+            <div className="space-y-3">{monthlyReviews.loading&&<p role="status" className="text-xs">正在读取报告联合研判，当前先显示榜单判断…</p>}{monthlyReviews.error&&<p role="alert">{monthlyReviews.error}</p>}<Button size="sm" variant="outline" onClick={monthlyReviews.refresh}>刷新报告联合研判</Button><MarketResearchPanel research={marketResearch} onSave={saveResearch} saved={researchSaved} saving={savingIdea} renderReviewEditor={monthlyReviews.canEdit?(finding)=><MonthlyReviewControl finding={finding} period={period} comparison={previousPeriod} record={monthlyReviews.records.find(r=>r.payload.findingId===finding.id)} onSaved={monthlyReviews.replace}/>:undefined}/></div>
+            <ResearchArchive imports={imports} period={period} comparison={previousPeriod} reviewSources={marketResearch.findings.flatMap(f=>f.review?[{id:f.review.id,updated_at:f.review.updated_at}]:[])} />
           </div>
         )}
         {analysisMode === "trends" && <div className="space-y-6"><MonthlyTrends imports={imports} period={period} /><BoardComparisons comparisons={boardComparisons} current={period} previous={previousPeriod} /></div>}
