@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
-import { ArrowLeft, CheckCircle2, Copy, Download, FileSignature, FileText, FolderKanban, Loader2, PenLine, Sparkles, Trash2, Upload } from "lucide-react"
+import { ArrowLeft, CheckCircle2, Calculator, Copy, Download, FileSignature, FileText, FolderKanban, Loader2, PenLine, Sparkles, Trash2, Upload } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { DeleteContentDialog } from "@/components/content/delete-content-dialog"
 import { createDirectStorageClient } from "@/lib/supabase/client"
@@ -329,7 +329,7 @@ export default function ContentDetailPage() {
 
         <div className="grid gap-6 lg:grid-cols-3">
           <Card className="lg:col-span-1"><CardHeader><CardTitle className="text-base">文件版本</CardTitle></CardHeader><CardContent className="space-y-3">
-            {files.length === 0 ? <p className="text-sm text-muted-foreground">尚未上传剧本</p> : files.map((file) => <div key={file.id} className={`rounded-lg border p-3 ${file.parse_status === "failed" ? "border-red-200 bg-red-50/50" : ""}`}><div className="flex items-start gap-2"><FileText className="mt-0.5 h-4 w-4" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{file.file_name}</p><p className="text-xs text-muted-foreground">版本 {file.version} · 上传于 {new Date(file.created_at).toLocaleString("zh-CN")} · {file.parse_status === "ready" ? "解析完成" : file.parse_status === "failed" ? "解析失败" : "等待解析"}</p>{file.parse_status === "failed" && <p className="mt-1 text-xs text-red-600">{parseErrorLabel(file.parse_error)}</p>}</div><Button asChild variant="ghost" size="icon"><a href={`/api/contents/files/${file.id}/download`}><Download className="h-4 w-4" /></a></Button></div></div>)}
+            {files.length === 0 ? <p className="text-sm text-muted-foreground">尚未上传剧本</p> : files.map((file) => <div key={file.id} className={`rounded-lg border p-3 ${file.parse_status === "failed" ? "border-red-200 bg-red-50/50" : ""}`}><div className="flex items-start gap-2"><FileText className="mt-0.5 h-4 w-4" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{file.file_name}</p><p className="text-xs text-muted-foreground">版本 {file.version} · 上传于 {new Date(file.created_at).toLocaleString("zh-CN")} · {file.parse_status === "ready" ? "解析完成" : file.parse_status === "failed" ? "解析失败" : "等待解析"}</p>{file.parse_status === "failed" && <p className="mt-1 text-xs text-red-600">{parseErrorLabel(file.parse_error)}</p>}</div>{/\.(?:docx?|pdf|txt|md)$/i.test(file.file_name)&&<Button asChild variant="ghost" size="icon" title="统计此版本"><Link href={`/localization?fileKind=content&fileId=${file.id}`}><Calculator className="h-4 w-4" /></Link></Button>}<Button asChild variant="ghost" size="icon"><a href={`/api/contents/files/${file.id}/download`}><Download className="h-4 w-4" /></a></Button></div></div>)}
           </CardContent></Card>
 
           <div className="space-y-6 lg:col-span-2">
