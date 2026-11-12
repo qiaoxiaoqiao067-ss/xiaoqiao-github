@@ -1,6 +1,6 @@
 import type { ClassifiedLine, LineKind, ScriptSource, SourceLine, StatisticsOptions, StatisticsResult } from "./types"
 
-export const STATISTICS_RULE_VERSION = "han-spoken-v1"
+export const STATISTICS_RULE_VERSION = "han-spoken-v2"
 export function countChinese(text: string) { return (text.match(/[\p{Unified_Ideograph}〇]/gu) || []).length }
 function hasVoice(text: string) {
   return /(?:^|[\s（(])(?:V\.?O\.?|O\.?S\.?)(?=$|[\s）):：]|\p{Unified_Ideograph})/iu.test(text)
@@ -42,13 +42,22 @@ function cleanSpeaker(text: string) {
     .replace(/^(?:vo|os)(?=\p{Unified_Ideograph})/giu, "").trim()
 }
 function parseCue(text: string) {
+  // Some scripts put the voice cue, rather than the complete line, in brackets.
+  const bracketLabel = text.match(/^【([^】]+)】\s*[：:]\s*([\s\S]*)$/)
+  if (bracketLabel && hasVoice(bracketLabel[1])) text = `${bracketLabel[1]}：${bracketLabel[2]}`
   const match = text.match(/^([^：:\n]{1,100})[：:]\s*([\s\S]*)$/)
   if (!match) return null
-  const name = cleanSpeaker(match[1])
+  const name = cleanSpeaker(match[1]) || (hasVoice(match[1]) ? "旁白" : "")
   if (!name || RESERVED.test(name) || /[。？！!?；;]/.test(name) || ACTION.test(name) || countChinese(name) > 24) return null
   // Prefix parentheses may contain commas, but a bare narrative prefix should not.
   if (!/^[\p{L}\p{N}\s.·、，,／/\-_+]+$/u.test(name)) return null
-  return { speaker: match[1].trim(), name, content: match[2].trim() }
+  let content = match[2].trim(), duplicateLabel = false
+  const repeated = content.match(/^([^：:\n]{1,40})[：:]\s*([\s\S]*)$/)
+  const baseName = (label: string) => cleanSpeaker(label).replace(/[\d一二三四五六七八九十]+$/, "")
+  if (repeated && baseName(repeated[1]) === baseName(name)) {
+    content = repeated[2].trim(); duplicateLabel = true
+  }
+  return { speaker: match[1].trim(), name, content, duplicateLabel }
 }
 function stripPerformance(text: string) {
   let voiceover = false, uncertain = false
@@ -68,7 +77,8 @@ function stripPerformance(text: string) {
       if (/[。！？?!]/.test(inner) && /^(?:我|你|他|她|这|那|别|不|是|没|为什么|怎么|如果|只要|请)/.test(inner)) {
         uncertain = true; return inner
       }
-      if (!inner.trim() || !countChinese(inner) || STAGE.test(inner)) return ""
+      if (!inner.trim() || !countChinese(inner) || STAGE.test(inner)
+        || /讽刺|情绪爆发|跟着去|也跟着|冤枉|狡辩|虚弱|泼脏水|坚韧|凶神恶煞|挑衅|懊恼|惧怕|蹲|担心|失望|跑上前|反应过来|不甘|举杯|逼近|打量|不可置信/.test(inner)) return ""
       uncertain = true
       return inner // unknown parenthetical wording is retained for human review
     })
@@ -219,11 +229,17 @@ export function analyzeScript(source: ScriptSource, options: StatisticsOptions =
     else if (/^(?:【第\s*\d+\s*页】|--\s*\d+\s+of\s+\d+\s*--|【扫描件\s*OCR)/i.test(t)) { kind = "excluded"; reason = "提取器页码或OCR提示，不是原剧本正文" }
     else if (ACTION.test(t)) {
       kind = "action"
+      const inlineCue = parseCue(t.replace(ACTION, "").trim())
       const q = quotes(t)
       const audible = /发出|播报|广播|喇叭|提示音|说道|说[：:]|喊道|叫道|耳语[：:]/.test(t)
       const unspoken = /没(?:有|能)?说|未说|说不出|没出声|没有出声|没再说/.test(t)
       const visible = inferredScreen(t, names)
-      if (q.length && /口型|唇语/.test(t) && !audible) {
+      if (inlineCue && inlineCue.content && (names.includes(inlineCue.name) || hasVoice(inlineCue.speaker))) {
+        const cleaned = stripPerformance(inlineCue.content)
+        kind = "dialogue"; content = cleaned.content; speaker = inlineCue.speaker
+        voiceover = hasVoice(speaker) || cleaned.voiceover
+        uncertain = true; reason = "动作符号后有完整人物台词标签，按台词提取，请核对。"
+      } else if (q.length && /口型|唇语/.test(t) && !audible) {
         kind = "unknown"; content = q.join("\n"); uncertain = true; reason = "仅描述口型，无法确定是否发声，请核对。"
       } else if (q.length && audible && !unspoken && !/输入|写下|打出|屏幕|短信/.test(t)) {
         kind = "dialogue"; content = q.join("\n"); speaker = "动作内明确发声"; voiceover = /机器|刷卡|广播|喇叭|提示音/.test(t)
@@ -234,18 +250,38 @@ export function analyzeScript(source: ScriptSource, options: StatisticsOptions =
     } else if (t.startsWith("【")) {
       const inner = t.slice(1).replace(/】$/, "")
       const explicit = inner.match(/^(?:字幕|短信|屏幕|文字|特写)\s*[：:]\s*(.*)$/)
+      const bracketVoice = parseCue(t) || parseCue(inner)
+      if (bracketVoice && hasVoice(bracketVoice.speaker)) {
+        const cleaned = stripPerformance(bracketVoice.content)
+        kind = "dialogue"; speaker = bracketVoice.speaker; content = cleaned.content
+        voiceover = true; uncertain = cleaned.uncertain || bracketVoice.duplicateLabel
+        reason = "方括号内的明确发声提示"
+      } else if (/^(?:画面定格|慢动作|近景|远景|中景|全景|切至|切回|镜头|黑场|白场|淡入|淡出|画面切|画面转|画面淡[入出]|快速(?:闪回|换装|蒙太奇))/.test(inner)
+        || (!explicit && /主观镜头/.test(inner))) {
+        kind = "action"; content = t
+      } else if (/^特写\s*[：:]/.test(inner)) {
+        const visible = inferredScreen(inner, names)
+        if (visible) { kind = "screen"; content = visible; reason = "特写中明确给出的可见文字" }
+        else { kind = "action"; content = t }
+      } else {
       kind = "screen"; content = explicit ? explicit[1] : inner
       const sender = parseCue(content)
       if (sender && !explicit) { speaker = sender.speaker; content = sender.content }
       if (/^特写[：:]/.test(inner) && !/写|签名|到账|授权|转让|终止|取消|审核|资金|姓名|证据|确认|无效|失败/.test(content)) {
         uncertain = true; reason = "特写可能是画面说明而非可见文字，计费画面字时请确认。"
       }
+      }
       pendingSpeaker = null
     } else {
       const cue = parseCue(t)
       const preceding = lines[lines.length - 1]
       const continuation = preceding && preceding.paragraph === original.paragraph && !cue && ["dialogue", "screen", "action"].includes(preceding.kind)
-      if (continuation && preceding.kind === "dialogue" && names.some(name => t.startsWith(name) && /^(?:起身|站|坐|走|看|抬|转|低头|打开|拿起|握住|抓住|拉住|放下|推开|笑着|冲向|扑向|伸手)/.test(t.slice(name.length)))) {
+      if (pendingSpeaker && !cue) {
+        const cleaned = stripPerformance(t)
+        kind = "dialogue"; speaker = pendingSpeaker; content = cleaned.content
+        voiceover = hasVoice(pendingSpeaker) || cleaned.voiceover
+        uncertain = true; reason = "由上一行人物名识别的无冒号台词，请核对。"; pendingSpeaker = null
+      } else if (continuation && preceding.kind === "dialogue" && names.some(name => t.startsWith(name) && /^(?:起身|站|坐|走|看|抬|转|低头|打开|拿起|握住|抓住|拉住|放下|推开|笑着|冲向|扑向|伸手)/.test(t.slice(name.length)))) {
         kind = "unknown"; content = t; uncertain = true; reason = "同段续行看似无标记动作，请核对是否仍为台词。"; pendingSpeaker = null
       } else if (continuation) {
         kind = preceding.kind
@@ -262,17 +298,15 @@ export function analyzeScript(source: ScriptSource, options: StatisticsOptions =
         content = cleaned.content
         voiceover = hasVoice(cue.speaker) || cleaned.voiceover
         kind = /短信|文字消息|文字信息/.test(cue.speaker) ? "screen" : "dialogue"
-        uncertain = cleaned.uncertain
-        if (uncertain) reason = "括号内容可能是实际台词，已保留，请核对。"
+        uncertain = cleaned.uncertain || cue.duplicateLabel
+        if (uncertain) reason = cue.duplicateLabel ? "人物标签重复，已去掉重复标签，请核对。" : "括号内容可能是实际台词，已保留，请核对。"
         pendingSpeaker = null
       } else if (cue && !cue.content) {
         kind = "action"; content = ""; pendingSpeaker = cue.speaker; reason = "独立人物标签，等待下一行"
       } else if (names.includes(cleanSpeaker(t)) && !/[。！？!?]/.test(t)) {
         kind = "action"; content = ""; pendingSpeaker = t; reason = "独立人物标签，等待下一行"
       } else if (!countChinese(t)) { kind = "excluded"; reason = "英文译文或无汉字内容" }
-      else if (pendingSpeaker) {
-        kind = "dialogue"; speaker = pendingSpeaker; content = t; uncertain = true; reason = "由上一行人物名识别的无冒号台词，请核对。"; pendingSpeaker = null
-      } else {
+      else {
         const actor = names.find(name => t.startsWith(name) && t.length > name.length)
         const missing = actor && t.slice(actor.length).match(/^（([^（）]*)）(.+)$/)
         const semicolon = t.match(/^([^；;]{1,25})[；;](.+)$/)
