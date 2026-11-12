@@ -1,6 +1,6 @@
 import type { Project } from "@/hooks/use-projects"
 import type { ProjectTimelineItem } from "@/hooks/use-project-timeline"
-import { scheduleDepartment } from "./department-schedule"
+import { scheduleDepartment, type ScheduleDepartment } from "./department-schedule"
 import { partitionScheduleVersions } from "./schedule-versions"
 
 export type CalendarItem = {
@@ -12,6 +12,8 @@ export type CalendarItem = {
   type: "task" | "meeting" | "project"
   href: string
   time: string
+  scheduleId?: string
+  department?: ScheduleDepartment
 }
 
 function isDate(value: string) {
@@ -30,6 +32,8 @@ export function projectScheduleCalendarItems(items: ProjectTimelineItem[], proje
     if (!project || /(?:日期|时间)(?:均)?待定/.test(item.title) || /^(?:日期|时间)(?:均)?待定[。.!]?$/.test(item.content?.trim() || "")) return []
     return [{
       id: `schedule-${item.id}`,
+      scheduleId: item.id,
+      department: scheduleDepartment(item.track),
       date: item.start_date,
       endDate: item.end_date,
       title: project,

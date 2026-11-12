@@ -7,8 +7,10 @@ import { useTodos } from "@/hooks/use-todos"
 import { useContents } from "@/hooks/use-contents"
 import { useHabits } from "@/hooks/use-habits"
 import { useProjects } from "@/hooks/use-projects"
-import { useProjectTimeline } from "@/hooks/use-project-timeline"
+import { useProjectTimeline, type ProjectTimelineItem } from "@/hooks/use-project-timeline"
 import { calendarItemOnDate, projectScheduleCalendarItems, type CalendarItem } from "@/lib/projects/calendar-schedule"
+import { CalendarEvent } from "@/components/projects/calendar-event"
+import { ScheduleItemEditor } from "@/components/projects/schedule-item-editor"
 import { CURRENT_SCHEDULE_LABEL } from "@/lib/projects/schedule-versions"
 import { useMeetings } from "@/hooks/use-meetings"
 import { useResearchItems } from "@/hooks/use-research-items"
@@ -40,14 +42,19 @@ export default function DashboardPage() {
   const { contents, loading: contentsLoading } = useContents()
   const { habits, completedIds, loading: habitsLoading, toggleToday } = useHabits()
   const { projects, loading: projectsLoading, error: projectsError, refetch: refetchProjects } = useProjects()
-  const { items: timelineItems, loading: timelineLoading, error: timelineError, refetch: refetchTimeline } = useProjectTimeline()
+  const { items: timelineItems, loading: timelineLoading, error: timelineError, updateItem: updateTimelineItem } = useProjectTimeline()
+  const [editingSchedule, setEditingSchedule] = useState<ProjectTimelineItem | null>(null)
+  const editSchedule = (id: string) => {
+    const item = timelineItems.find((record) => record.id === id)
+    if (item) setEditingSchedule(item)
+  }
   const scheduleEvents = useMemo(() => projectScheduleCalendarItems(timelineItems, projects), [timelineItems, projects])
   useEffect(() => {
     let refreshedAt = 0
     const refreshSchedule = () => {
       if (document.visibilityState !== "visible" || Date.now() - refreshedAt < 1000) return
       refreshedAt = Date.now()
-      void Promise.allSettled([refetchTimeline(), refetchProjects()])
+      void Promise.allSettled([refetchProjects()])
     }
     window.addEventListener("focus", refreshSchedule)
     document.addEventListener("visibilitychange", refreshSchedule)
@@ -55,7 +62,7 @@ export default function DashboardPage() {
       window.removeEventListener("focus", refreshSchedule)
       document.removeEventListener("visibilitychange", refreshSchedule)
     }
-  }, [refetchTimeline, refetchProjects])
+  }, [refetchProjects])
   const { meetings } = useMeetings()
   const { items: researchItems } = useResearchItems()
   const { ideas } = useIdeas()
@@ -169,12 +176,12 @@ export default function DashboardPage() {
                     const dayItems = calendarItems.filter((item) => calendarItemOnDate(item, key)).sort((a, b) => a.time.localeCompare(b.time))
                     return <div key={key} aria-label={`${key} 日程`} className={`min-h-[150px] ${isToday ? "bg-[#c9f45a]/[.11]" : "bg-card"}`}>
                       <div className={`flex items-center justify-between border-b border-border/50 px-2.5 py-2 ${isToday ? "text-primary" : ""}`}><span className="text-[10px] text-muted-foreground">周{"一二三四五六日"[dayIndexMonday(day)]}</span><span className={`flex h-7 min-w-7 items-center justify-center rounded-full px-1 text-xs font-semibold ${isToday ? "bg-[#173f31] text-[#c9f45a]" : ""}`}>{day.getMonth() + 1}/{day.getDate()}</span></div>
-                      <div className="space-y-1 p-1.5">{dayItems.length ? dayItems.map((item) => <Link key={item.id} href={item.href} title={`${item.title} · ${item.detail}`} className={`block rounded-md border-l-2 px-1.5 py-1 transition-opacity hover:opacity-75 ${calendarItemClass(item.type)}`}><p className="line-clamp-2 text-[10px] font-semibold leading-4">{item.title}</p>{item.detail&&item.detail!==item.title&&<p className="mt-0.5 text-[10px] leading-4 opacity-85">{item.detail}</p>}<p className="mt-0.5 text-[7px] leading-[10px] opacity-55">{item.time} · {calendarTypeLabel(item.type)}</p></Link>) : <p className="py-5 text-center text-[10px] text-muted-foreground/45">暂无安排</p>}</div>
+                      <div className="space-y-1 p-1.5">{dayItems.length ? dayItems.map((item) => <CalendarEvent key={item.id} item={item} onEdit={editSchedule} />) : <p className="py-5 text-center text-[10px] text-muted-foreground/45">暂无安排</p>}</div>
                     </div>
                   })}
                 </div>
-              </div>:<MonthCalendar days={monthDays} month={visibleMonth.getMonth()} todayKey={todayKey} items={calendarItems}/>}
-              <div className="flex flex-wrap items-center gap-4 border-t border-border/60 px-4 py-2 text-[10px] text-muted-foreground"><Legend color="bg-emerald-500" label="任务" /><Legend color="bg-sky-500" label="会议" /><Legend color="bg-amber-500" label="项目节点" /><span className={`ml-auto ${timelineError || projectsError ? "text-destructive" : ""}`} role="status">{timelineError || projectsError ? "项目排期读取失败，请刷新重试" : timelineLoading || projectsLoading ? "正在同步项目排期…" : `${CURRENT_SCHEDULE_LABEL} · 已同步 ${scheduleEvents.length} 个有日期节点`}</span></div>
+              </div>:<MonthCalendar days={monthDays} month={visibleMonth.getMonth()} todayKey={todayKey} items={calendarItems} onEdit={editSchedule}/>}
+              <div className="flex flex-wrap items-center gap-4 border-t border-border/60 px-4 py-2 text-[10px] text-muted-foreground"><Legend color="bg-emerald-500" label="任务" /><Legend color="bg-sky-500" label="会议" /><Legend color="bg-violet-500" label="内容部" /><Legend color="bg-amber-500" label="制作部" /><Legend color="bg-slate-400" label="协同事项" /><span className={`ml-auto ${timelineError || projectsError ? "text-destructive" : ""}`} role="status">{timelineError || projectsError ? "项目排期读取失败，请刷新重试" : timelineLoading || projectsLoading ? "正在同步项目排期…" : `${CURRENT_SCHEDULE_LABEL} · 已同步 ${scheduleEvents.length} 个有日期节点`}</span></div>
             </CardContent>
           </Card>
         </section>
@@ -198,12 +205,13 @@ export default function DashboardPage() {
           <Card><CardHeader className="flex-row items-center justify-between px-4 py-3"><div><p className="section-kicker">UP NEXT</p><CardTitle className="mt-1 text-base">近期会议与复盘</CardTitle></div><Link href="/meetings"><ArrowUpRight className="h-4 w-4 text-muted-foreground" /></Link></CardHeader><CardContent className="space-y-2 px-4 pb-4 pt-0">{nextMeetings.length ? nextMeetings.map((meeting) => <Link href="/meetings" key={meeting.id} className="flex items-center gap-3 rounded-xl border border-border/65 px-3 py-2"><CalendarDays className="h-4 w-4 shrink-0 text-primary" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{meeting.title}</p><p className="text-[10px] text-muted-foreground">{meeting.meeting_date ? formatDate(meeting.meeting_date) : "待定"} · {meeting.meeting_type}</p></div></Link>) : <p className="text-xs text-muted-foreground">近期没有已安排的会议。</p>}<Link href="/reports" className="flex items-center justify-between rounded-xl bg-amber-500/[.07] px-3 py-2 text-xs font-semibold text-amber-800"><span className="flex items-center gap-2"><Clock3 className="h-3.5 w-3.5" />下班前完成工作复盘</span><ChevronRight className="h-3.5 w-3.5" /></Link></CardContent></Card>
         </section>
       </div>
+      {editingSchedule && <ScheduleItemEditor key={editingSchedule.id} item={editingSchedule} projectTitle={projects.find((project) => project.id === editingSchedule.project_id)?.title} onClose={() => setEditingSchedule(null)} onSave={updateTimelineItem} />}
     </AppLayout>
   )
 }
 
 function localDateKey(date: Date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}` }
-function MonthCalendar({ days, month, todayKey, items }: { days: Date[]; month: number; todayKey: string; items: CalendarItem[] }) {
+function MonthCalendar({ days, month, todayKey, items, onEdit }: { days: Date[]; month: number; todayKey: string; items: CalendarItem[]; onEdit: (id: string) => void }) {
   return <div className="overflow-x-auto bg-card">
     <div className="min-w-[820px]">
       <div className="grid grid-cols-7 border-b border-border/60 bg-muted/25">{"一二三四五六日".split("").map((day) => <div key={day} className="px-1 py-1.5 text-center text-[10px] font-semibold text-muted-foreground">周{day}</div>)}</div>
@@ -214,10 +222,7 @@ function MonthCalendar({ days, month, todayKey, items }: { days: Date[]; month: 
         const muted = day.getMonth() !== month
         return <div key={key} aria-label={`${key} 日程`} className={`min-h-[94px] border-b border-r border-border/50 p-1.5 last:border-r-0 ${isToday ? "bg-[#c9f45a]/[.12]" : muted ? "bg-muted/15" : "bg-card"}`}>
           <div className="mb-1 flex items-center justify-between"><span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-semibold ${isToday ? "bg-[#173f31] text-[#c9f45a]" : muted ? "text-muted-foreground/45" : "text-[#355849]"}`}>{day.getMonth() + 1}/{day.getDate()}</span>{dayItems.length > 0 && <span className="text-[9px] text-muted-foreground">{dayItems.length}项</span>}</div>
-          <div className="space-y-1">{dayItems.map((item) => <Link key={item.id} href={item.href} title={`${calendarTypeLabel(item.type)} · ${item.title} · ${item.detail}`} className={`block rounded-md border-l-2 px-1.5 py-1 hover:opacity-75 ${calendarItemClass(item.type)}`}>
-            <p className="line-clamp-2 text-[10px] font-semibold leading-4">{item.title}</p>
-            {item.detail && item.detail !== item.title && <p className="mt-0.5 text-[10px] leading-4 opacity-85">{item.detail}</p>}
-          </Link>)}</div>
+          <div className="space-y-1">{dayItems.map((item) => <CalendarEvent key={item.id} item={item} onEdit={onEdit} compact />)}</div>
         </div>
       })}</div>
     </div>
@@ -228,8 +233,6 @@ function addDays(date: Date, count: number) { const result = new Date(date); res
 function dayIndexMonday(date: Date) { return date.getDay() === 0 ? 6 : date.getDay() - 1 }
 function monthDay(date: Date) { return `${date.getMonth() + 1}月${date.getDate()}日` }
 function timeLabel(value: string) { const date = new Date(value); if (Number.isNaN(date.getTime()) || !value.includes("T")) return "全天"; return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}` }
-function calendarTypeLabel(type: CalendarItem["type"]) { return type === "meeting" ? "会议" : type === "project" ? "项目节点" : "任务" }
-function calendarItemClass(type: CalendarItem["type"]) { return type === "meeting" ? "border-sky-500 bg-sky-500/10 text-sky-950" : type === "project" ? "border-amber-500 bg-amber-500/10 text-amber-950" : "border-emerald-500 bg-emerald-500/10 text-emerald-950" }
 function taskStatusClass(status: string) { return status === "in_progress" ? "border-[#b6df43] bg-[#c9f45a] text-[#173f31]" : status === "waiting" ? "border-[#e0b94f] bg-[#f2d57d] text-[#4d3b05]" : status === "completed" ? "border-[#79b891] bg-[#a9d7b8] text-[#153d2c]" : "border-[#d7ddd6] bg-[#f0f2ed] text-[#385046]" }
 function Legend({ color, label }: { color: string; label: string }) { return <span className="flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${color}`} />{label}</span> }
 function shortDate(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value.slice(5, 10) : `${date.getMonth() + 1}/${date.getDate()}` }

@@ -13,6 +13,8 @@ test("calendar shares the latest-version deduplication and keeps each project's 
   assert.deepEqual(new Set(result.map((item) => item.id)), new Set(["schedule-current", "schedule-queen"]))
   assert.equal(result[0].detail, "前15集剪辑完成")
   assert.equal(result[0].time, "制作部")
+  assert.equal(result[0].department, "制作部")
+  assert.equal(result.find((item) => item.id === "schedule-current")?.scheduleId, "current")
   assert.ok(result.every((item) => item.href === "/projects"))
 })
 
