@@ -1,6 +1,7 @@
 "use client";
 
 import {useMonthlyReviews} from '@/hooks/use-monthly-reviews';
+import {ValidationFeedbackPanel} from '@/components/market/validation-feedback';
 import {applyMonthlyReviews,reviewText} from '@/lib/market/monthly-review';
 import {marketJson} from '@/components/market/report-library';
 import {MonthlyReviewControl} from '@/components/market/monthly-review';
@@ -1062,6 +1063,8 @@ export default function MarketDataPage() {
       [32, 18, 70, 60, 70, 70, 70, 60],
     );
     const reportRows=marketResearch.findings.flatMap(f=>f.review?f.review.payload.evidence.map((r,i)=>({研究方向:f.genre,引用:`报告${i+1}`,关系:r.relation,独立性:r.independence,标题:r.evidence.payload.title,来源:r.evidence.payload.source,位置:r.evidence.payload.locator,范围:r.evidence.payload.scope,原文:r.evidence.payload.excerpt,证据编号:r.evidence.id,版本:r.evidence.updated_at})):[]);
+    const feedbackRows=marketResearch.findings.flatMap(f=>(f.review?.payload.feedback||[]).map(r=>({研究方向:f.genre,原建议月份:r.sourcePeriod,选题:r.ideaTitle,验证事项:r.action.title,原建议:r.action.description,实际结果:r.action.result,建议效果:r.action.outcome,调整理由:r.action.outcomeNote,完成时间:r.action.completedAt,记录:r.linkId,版本:r.version})));
+    if(feedbackRows.length)append("建议验证反馈",feedbackRows,[20,18,40,24,80,80,18,70,28,40,30]);
     if(reportRows.length)append("报告研判依据",reportRows,[20,12,15,15,35,45,40,60,80,40,30]);
     if (externalSignals.length) {
       append("外部信号旁证", externalSignals.map((item) => ({ 来源: item.source, 统计期: item.period, 话题或作品: item.topic, 指标: item.metric, 数值: item.value, 环比变化: item.change, 证据链接: item.url, 备注: item.note, 口径提醒: "外部旁证，不与ADX指标混算" })), [22, 15, 32, 24, 16, 16, 45, 45, 30]);
@@ -2021,7 +2024,7 @@ export default function MarketDataPage() {
         {analysisMode === "production" && (
           <div className="space-y-6">
             <div className="space-y-3">{monthlyReviews.loading&&<p role="status" className="text-xs">正在读取报告联合研判，当前先显示榜单判断…</p>}{monthlyReviews.error&&<p role="alert">{monthlyReviews.error}</p>}<Button size="sm" variant="outline" onClick={monthlyReviews.refresh}>刷新报告联合研判</Button><MarketResearchPanel research={marketResearch} onSave={saveResearch} saved={researchSaved} saving={savingIdea} renderReviewEditor={monthlyReviews.canEdit?(finding)=><MonthlyReviewControl finding={finding} period={period} comparison={previousPeriod} record={monthlyReviews.records.find(r=>r.payload.findingId===finding.id)} onSaved={monthlyReviews.replace}/>:undefined}/></div>
-            <ResearchArchive imports={imports} period={period} comparison={previousPeriod} reviewSources={marketResearch.findings.flatMap(f=>f.review?[{id:f.review.id,updated_at:f.review.updated_at}]:[])} />
+            <ValidationFeedbackPanel key={period} period={period}/><ResearchArchive imports={imports} period={period} comparison={previousPeriod} reviewSources={marketResearch.findings.flatMap(f=>f.review?[{id:f.review.id,updated_at:f.review.updated_at}]:[])} />
           </div>
         )}
         {analysisMode === "trends" && <div className="space-y-6"><MonthlyTrends imports={imports} period={period} /><BoardComparisons comparisons={boardComparisons} current={period} previous={previousPeriod} /></div>}
