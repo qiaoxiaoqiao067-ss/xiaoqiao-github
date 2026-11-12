@@ -6,6 +6,7 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { DailySyncStatusPanel } from "@/components/market/daily-sync-status";
 import { MonthlyTrends } from "@/components/market/monthly-trends";
 import { WorkTracking } from "@/components/market/work-tracking";
+import { MarketEvidence } from "@/components/market/market-evidence";
 import { ResearchArchive } from "@/components/market/research-archive";
 import { BoardComparisons } from "@/components/market/board-comparisons";
 import { BoardPlatforms } from "@/components/market/board-platforms";
@@ -2011,7 +2012,7 @@ export default function MarketDataPage() {
         )}
         {analysisMode === "trends" && <div className="space-y-6"><MonthlyTrends imports={imports} period={period} /><BoardComparisons comparisons={boardComparisons} current={period} previous={previousPeriod} /></div>}
         {analysisMode === "external" && (
-          <ExternalSignalsPanel signals={externalSignals} source={externalSource} uploading={uploadingExternal} fileRef={externalSignalFileRef} onSourceChange={setExternalSource} onImport={importExternalSignals} onDownloadTemplate={downloadExternalSignalTemplate} />
+          <div className="space-y-4"><MarketEvidence period={period}/><ExternalSignalsPanel signals={externalSignals} source={externalSource} uploading={uploadingExternal} fileRef={externalSignalFileRef} onSourceChange={setExternalSource} onImport={importExternalSignals} onDownloadTemplate={downloadExternalSignalTemplate} /></div>
         )}
           </div>
         )}
