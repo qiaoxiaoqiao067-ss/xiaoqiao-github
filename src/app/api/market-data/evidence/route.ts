@@ -4,6 +4,8 @@ import {requireUser} from '@/lib/supabase/require-user'
 import {requireWorkspaceAccess} from '@/lib/supabase/workspace-access'
 import {serviceClient} from '@/lib/supabase/service'
 import {EVIDENCE_SOURCE,evidenceWriteSchema,type EvidencePayload} from '@/lib/market/evidence'
+import {readReport,readReportUnits} from '@/lib/market/report-store'
+import {resolveCitation} from '@/lib/market/report-types'
 export const dynamic='force-dynamic'
 const fields='id,created_at,updated_at,raw_rows'
 const fail=(error:string,status=400)=>NextResponse.json({error},{status})
@@ -22,7 +24,13 @@ async function write(request:NextRequest,edit:boolean){try{
  const input=parsed.data,owner=ctx.access!.ownerId
  if(edit&&!input.updated_at)return fail('缺少记录版本，请重新打开证据')
  const now=new Date(Math.max(Date.now(),Date.parse(input.updated_at||'')+1||0)).toISOString()
- const payload:EvidencePayload={...input.evidence,kind:'evidence',actor:ctx.user!.id,verifiedAt:input.evidence.status==='已核验'?now:null,verifiedBy:input.evidence.status==='已核验'?ctx.user!.id:null}
+ let citation
+ if(input.evidence.reportRef){
+  const report=await readReport(owner,input.evidence.reportRef.reportId);if(!report)return fail('引用附件不存在或无权访问',404)
+  try{citation=resolveCitation(report,await readReportUnits(report),input.evidence.reportRef)}catch(e){return fail(e instanceof Error?e.message:'附件引用无效')}
+  if(input.evidence.excerpt!==citation.quote)return fail('摘录与附件引用不一致，请重新选取出处')
+ }
+ const payload:EvidencePayload={...input.evidence,...(citation?{citation,locator:`${citation.fileName} · ${citation.label}`} : {}),kind:'evidence',actor:ctx.user!.id,verifiedAt:input.evidence.status==='已核验'?now:null,verifiedBy:input.evidence.status==='已核验'?ctx.user!.id:null}
  if(edit){
   const r=await serviceClient.from('market_data_imports').update({file_name:payload.title,period_label:payload.period||null,raw_rows:[payload],updated_at:now}).eq('user_id',owner).eq('source_name',EVIDENCE_SOURCE).eq('id',input.id).eq('updated_at',input.updated_at!).select(fields).maybeSingle()
   if(r.error)throw r.error;if(!r.data)return fail('证据已被修改或不存在，请刷新列表后重新打开；当前输入仍保留。',409)
