@@ -8,9 +8,9 @@ export async function marketJson(url:string,body?:unknown,method='POST'){
  const data=await r.json().catch(()=>null);if(!r.ok||!data)throw new Error(data?.error||`服务暂不可用（HTTP ${r.status}），请重试`);return data
 }
 export function ReportOriginal({citation}:{citation:Pick<ReportCitation,'reportId'|'page'>}){
- const [url,setUrl]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false)
- async function open(){setBusy(true);setError('');setUrl('');try{const r=await marketJson(`/api/market-data/reports?id=${encodeURIComponent(citation.reportId)}&download=1`);setUrl(r.url+(citation.page?`#page=${citation.page}`:''))}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
- return <span className="inline-flex flex-wrap items-center gap-2 text-xs"><Button type="button" size="sm" variant="outline" disabled={busy} onClick={()=>void open()}>{busy?'准备原附件…':'查看原附件'}</Button>{url&&<a href={url} target="_blank" rel="noreferrer" className="text-primary underline">打开原文件{citation.page?` · 第${citation.page}页`:''}（链接2分钟有效）</a>}{error&&<span role="alert">{error}</span>}</span>
+ const [download,setDownload]=useState(false),[url,setUrl]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false)
+ async function open(){setBusy(true);setError('');setUrl('');try{const r=await marketJson(`/api/market-data/reports?id=${encodeURIComponent(citation.reportId)}&download=1`);setDownload(Boolean(r.download));setUrl(r.url+(citation.page?`#page=${citation.page}`:''))}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
+ return <span className="inline-flex flex-wrap items-center gap-2 text-xs"><Button type="button" size="sm" variant="outline" disabled={busy} onClick={()=>void open()}>{busy?'准备原附件…':'查看原附件'}</Button>{url&&<a href={url} target="_blank" rel="noreferrer" className="text-primary underline">{download?'下载原文件':'打开原文件'}{citation.page?` · 第${citation.page}页`:''}（链接2分钟有效）</a>}{error&&<span role="alert">{error}</span>}</span>
 }
 export function ReportLibrary({onCite,disabled=false}:{disabled?:boolean;onCite:(ref:ReportRef,report:ReportRecord,unit:ReportUnit)=>void}){
  const [reports,setReports]=useState<ReportRecord[]>([]),[more,setMore]=useState(false),[canEdit,setCanEdit]=useState(false),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(''),[message,setMessage]=useState(''),[retryUpload,setRetryUpload]=useState(false)
