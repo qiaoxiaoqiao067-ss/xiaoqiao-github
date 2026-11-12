@@ -57,6 +57,9 @@ export function departmentScheduleEntries(items: ProjectTimelineItem[], first: s
   ])
   const seen = new Set<string>()
   return entries.filter((entry) => {
+    // Dated records have already been partitioned by version and exact task.
+    // Only collapse repeated undated reminders derived from notes here.
+    if (entry.start) return true
     const key = [entry.item.project_id, entry.department, entry.start, entry.end, entry.title].join("|")
     if (seen.has(key)) return false
     seen.add(key)
