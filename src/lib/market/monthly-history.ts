@@ -63,7 +63,12 @@ export function workObservations(series:MonthPoint[],title:string,channel:string
   })
 }
 export function trackIdentity(board:string,title:string,channel:string){return JSON.stringify([board,normalizedWork(title),normalizedWork(channel)])}
-export function candidateWorks(sample:BoardSample) {return sample.ai.map(r=>({board:sample.key,title:String(r[sample.titleKey]??''),channel:String(r[sample.channelKey||'']??''),period:sample.period,rank:metricNumber(r[sample.rankKey])})).filter(w=>w.title)}
+export function candidateWorks(sample:BoardSample) {
+  const candidates=sample.ai.map(r=>({board:sample.key,title:String(r[sample.titleKey]??''),channel:String(r[sample.channelKey||'']??''),period:sample.period,rank:metricNumber(r[sample.rankKey])})).filter(w=>w.title)
+  const counts=new Map<string,number>()
+  candidates.forEach(c=>{const key=trackIdentity(c.board,c.title,c.channel);counts.set(key,(counts.get(key)||0)+1)})
+  return candidates.filter(c=>counts.get(trackIdentity(c.board,c.title,c.channel))===1)
+}
 
 export function describeContinuity(points:ReturnType<typeof genreTimeline>['points']) {
   const tail=points.slice(-3)

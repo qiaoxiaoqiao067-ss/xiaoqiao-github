@@ -1,6 +1,6 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
-import {activeMonthlySources,describeContinuity,genreTimeline,historyRequests,monthKey,monthRange,monthlySeries,trackIdentity,workObservations} from '../src/lib/market/monthly-history'
+import {activeMonthlySources,candidateWorks,describeContinuity,genreTimeline,historyRequests,monthKey,monthRange,monthlySeries,trackIdentity,workObservations} from '../src/lib/market/monthly-history'
 import {isBoardImport} from '../src/lib/market/import-scope'
 import {createRecordSchema,patchWatchSchema} from '../src/lib/market/research-records'
 const source=(period:string,rows:Record<string,unknown>[],extra={})=>({id:period,source_name:'ADX',file_name:'TK短剧热播榜.xlsx',period_label:period,created_at:'2026-11-01',updated_at:'2026-11-01',raw_rows:rows,...extra})
@@ -46,4 +46,9 @@ test('continuity conclusions require three valid recent months and do not bridge
  assert.equal(describeContinuity(points([18,14,10])).title,'连续两次明显回落')
  assert.equal(describeContinuity(points([65,66,63])).title,'近三月相对稳定')
  assert.equal(describeContinuity(points([10,null,18])).title,'连续证据不足')
+})
+
+test('tracking candidates omit ambiguous duplicates but keep distinct channels',()=>{
+ const sample=monthlySeries([source('2026年10月',[row(1,'Story','AI仿真人','a'),row(2,'Story','AI仿真人','a'),row(3,'Story','AI仿真人','b')])],['2026-10'],'ADX:tiktok-hot')[0].sample!
+ assert.deepEqual(candidateWorks(sample).map(w=>w.channel),['b'])
 })

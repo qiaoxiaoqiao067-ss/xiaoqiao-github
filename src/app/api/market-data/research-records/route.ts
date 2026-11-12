@@ -77,7 +77,7 @@ export async function PATCH(request:NextRequest){
     const input=parsed.data
     const {data,error}=await serviceClient.from('market_data_imports').select(fields).eq('id',input.id).eq('user_id',ctx.access!.ownerId).eq('source_name',WATCH_SOURCE).single()
     if(error||!data)return fail('追踪记录不存在',404)
-    const updated=await serviceClient.from('market_data_imports').update({raw_rows:[{...data.raw_rows[0],status:input.status,note:input.note,actor:ctx.user!.id}],updated_at:new Date().toISOString()}).eq('id',input.id).eq('user_id',ctx.access!.ownerId).eq('source_name',WATCH_SOURCE).eq('updated_at',input.updated_at).select(fields).maybeSingle()
+    const updated=await serviceClient.from('market_data_imports').update({raw_rows:[{...data.raw_rows[0],status:input.status,note:input.note,actor:ctx.user!.id}],updated_at:new Date(Math.max(Date.now(),Date.parse(input.updated_at)+1)).toISOString()}).eq('id',input.id).eq('user_id',ctx.access!.ownerId).eq('source_name',WATCH_SOURCE).eq('updated_at',input.updated_at).select(fields).maybeSingle()
     if(updated.error)throw updated.error
     if(!updated.data)return fail('记录已被其他人修改，请刷新后再编辑；当前文字仍保留。',409)
     return NextResponse.json({record:record(updated.data)})

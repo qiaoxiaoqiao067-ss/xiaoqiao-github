@@ -3,12 +3,12 @@
 import { Button } from '@/components/ui/button'
 import type { MarketResearch, ResearchFinding } from '@/lib/market/research'
 
-export function MarketResearchPanel({ research, compact = false, onExplore, onSave, saving, saved }: {
-  research: MarketResearch; compact?: boolean; onExplore?: () => void
+export function MarketResearchPanel({ research, compact = false, frozen = false, onExplore, onSave, saving, saved }: {
+  research: MarketResearch; compact?: boolean; frozen?: boolean; onExplore?: () => void
   onSave?: (finding: ResearchFinding) => Promise<void>; saving?: string; saved?: (finding: ResearchFinding) => boolean
 }) {
   return <section className="min-w-0 space-y-4" aria-label="市场研判与行动">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold text-[#173f31]">市场研判与行动</h2><p className="mt-1 text-xs leading-6 text-[#61766b]">事实 → 判断 → 选题与测试动作。规则筛选的研究建议，待内容核验；随统计期和对比期更新。</p></div>{compact && <Button size="sm" variant="outline" onClick={onExplore}>对标作品与执行建议 →</Button>}</div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold text-[#173f31]">市场研判与行动</h2><p className="mt-1 text-xs leading-6 text-[#61766b]">{frozen ? '以下为保存时的事实、判断与行动快照，仍需内容核验；不会随当前统计期或新榜单变化。' : '事实 → 判断 → 选题与测试动作。规则筛选的研究建议，待内容核验；随统计期和对比期更新。'}</p></div>{compact && <Button size="sm" variant="outline" onClick={onExplore}>对标作品与执行建议 →</Button>}</div>
     {!research.findings.length && <div className="rounded-2xl border bg-white p-5 text-sm text-[#61766b]">暂无足够且通过校验的AI题材数据。请先补齐榜单或核验来源；此处不生成无依据的市场判断。</div>}
     <div className="overflow-hidden rounded-2xl border border-[#b6ce92] bg-[#f7faef]">{research.findings.map((f,i)=><article key={f.id} className="min-w-0 border-b border-[#d7e4c8] p-5 last:border-0">
       <div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold text-[#789a52]">{String(i+1).padStart(2,'0')}</span><h3 className="min-w-0 flex-1 text-base font-semibold text-[#173f31]">{f.title}</h3><span className="rounded-full bg-[#dce9c9] px-3 py-1 text-xs text-[#173f31]">{f.decision}</span></div>
