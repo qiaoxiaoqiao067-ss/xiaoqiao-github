@@ -3,6 +3,9 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { AppLayout } from "@/components/layout/app-layout";
+import { MonthlyTrends } from "@/components/market/monthly-trends";
+import { WorkTracking } from "@/components/market/work-tracking";
+import { ResearchArchive } from "@/components/market/research-archive";
 import { BoardComparisons } from "@/components/market/board-comparisons";
 import { BoardPlatforms } from "@/components/market/board-platforms";
 import { boardSamples, compareBoards } from "@/lib/market/board-analysis";
@@ -141,6 +144,7 @@ function isMarketImport(item: MarketDataImport) {
   return (
     item.source_name !== "中文名映射" &&
     !item.source_name.startsWith("ADX日报:") &&
+    !item.source_name.startsWith("市场研究:") &&
     !item.source_name.startsWith("外部信号:") &&
     !item.source_name.startsWith(VERSION_MARKER_PREFIX)
   );
@@ -1735,6 +1739,7 @@ export default function MarketDataPage() {
         <AnalysisModeTabs activeMode={analysisMode} onChange={setAnalysisMode} />
         {analysisMode === "works" && (
           <div className="space-y-6">
+        <WorkTracking imports={imports} period={period} samples={currentBoards} />
         <Card>
           <CardContent className="flex flex-wrap items-end gap-3 p-4">
             <Filter
@@ -2004,9 +2009,10 @@ export default function MarketDataPage() {
         {analysisMode === "production" && (
           <div className="space-y-6">
             <MarketResearchPanel research={marketResearch} onSave={saveResearch} saved={researchSaved} saving={savingIdea} />
+            <ResearchArchive imports={imports} period={period} comparison={previousPeriod} />
           </div>
         )}
-        {analysisMode === "trends" && <BoardComparisons comparisons={boardComparisons} current={period} previous={previousPeriod} />}
+        {analysisMode === "trends" && <div className="space-y-6"><MonthlyTrends imports={imports} period={period} /><BoardComparisons comparisons={boardComparisons} current={period} previous={previousPeriod} /></div>}
         {analysisMode === "external" && (
           <ExternalSignalsPanel signals={externalSignals} source={externalSource} uploading={uploadingExternal} fileRef={externalSignalFileRef} onSourceChange={setExternalSource} onImport={importExternalSignals} onDownloadTemplate={downloadExternalSignalTemplate} />
         )}

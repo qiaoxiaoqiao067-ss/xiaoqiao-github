@@ -1,9 +1,9 @@
 import { latestBoardImports, marketBoardKey, MARKET_SAMPLE_LIMITS, sampleMarketRows, type MarketPeriodKind } from './monitoring-policy'
 
 type Row = Record<string, unknown>
-type Source = { source_name: string; file_name: string; period_label: string | null; created_at: string; raw_rows: Row[]; analysis_issues?: string[]; columns?: string[] }
+type Source = { id?: string; source_name: string; file_name: string; period_label: string | null; created_at: string; raw_rows: Row[]; analysis_issues?: string[]; columns?: string[] }
 export type BoardSample = {
-  key: string; name: string; period: string; rows: Row[]; ai: Row[]; metric: string | null
+  sourceId?: string; key: string; name: string; period: string; rows: Row[]; ai: Row[]; metric: string | null
   issues: string[]; rankKey: string; titleKey: string; tagKey: string; channelKey?: string
 }
 export type BoardComparison = {
@@ -45,7 +45,7 @@ export function boardSamples(imports: Source[], kind: MarketPeriodKind): BoardSa
     const metric = key.endsWith('short-drama') ? (keys.includes('新素材数') ? '新素材数' : null)
       : keys.includes('播放增量') && rows.some(r => metricNumber(r['播放增量']) !== null) ? '播放增量'
       : keys.includes('热度') ? '热度' : null
-    return { key, name: source.file_name, period, rows, ai: rows.filter(r => tags(r,tagKey).includes('AI仿真人')), metric, issues:[...new Set(issues)], rankKey, titleKey, tagKey, channelKey }
+    return { sourceId: source.id, key, name: source.file_name, period, rows, ai: rows.filter(r => tags(r,tagKey).includes('AI仿真人')), metric, issues:[...new Set(issues)], rankKey, titleKey, tagKey, channelKey }
   }).filter(s => s.titleKey || s.rankKey)
 }
 function genreCounts(sample: BoardSample, rows: Row[]) {
