@@ -20,7 +20,7 @@ export async function GET(req:NextRequest){try{
  const access=await requireWorkspaceAccess(user.id,'market_data','view');if(!access)return fail('没有市场查看权限',403)
  const id=req.nextUrl.searchParams.get('id')
  if(id){if(!uid.safeParse(id).success)return fail('附件编号无效');const record=await readReport(access.ownerId,id);if(!record)return fail('附件不存在或无权访问',404)
-  if(req.nextUrl.searchParams.get('download')==='1'){const {data,error}=await serviceClient.storage.from('content-files').createSignedUrl(record.payload.storagePath,120,record.payload.extension==='pdf'?undefined:{download:record.payload.fileName});if(error)throw error;return NextResponse.json({url:data.signedUrl,download:record.payload.extension!=='pdf'},{headers:{'Cache-Control':'private, no-store'}})}
+  if(req.nextUrl.searchParams.get('download')==='1'){const {data,error}=await serviceClient.storage.from('content-files').createSignedUrl(record.payload.storagePath,120,record.payload.extension==='pdf'?undefined:{download:record.payload.fileName});if(error)throw error;const originalUrl=new URL(data.signedUrl);if(record.payload.extension!=='pdf')originalUrl.searchParams.set('download',record.payload.fileName);return NextResponse.json({url:originalUrl.toString(),download:record.payload.extension!=='pdf'},{headers:{'Cache-Control':'private, no-store'}})}
   return NextResponse.json({record,units:await readReportUnits(record)},{headers:{'Cache-Control':'private, no-store'}})
  }
  const offset=Number(req.nextUrl.searchParams.get('offset')||0);if(!Number.isInteger(offset)||offset<0||offset>100000)return fail('无效分页')
