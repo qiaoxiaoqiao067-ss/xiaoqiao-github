@@ -1,12 +1,17 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { AppLayout } from "@/components/layout/app-layout"
 import { useTodos } from "@/hooks/use-todos"
 import { useContents } from "@/hooks/use-contents"
 import { useHabits } from "@/hooks/use-habits"
 import { useProjects } from "@/hooks/use-projects"
+import { useProjectTimeline, type ProjectTimelineItem } from "@/hooks/use-project-timeline"
+import { calendarItemOnDate, projectScheduleCalendarItems, type CalendarItem } from "@/lib/projects/calendar-schedule"
+import { CalendarEvent } from "@/components/projects/calendar-event"
+import { ScheduleItemEditor } from "@/components/projects/schedule-item-editor"
+import { CURRENT_SCHEDULE_LABEL } from "@/lib/projects/schedule-versions"
 import { useMeetings } from "@/hooks/use-meetings"
 import { useResearchItems } from "@/hooks/use-research-items"
 import { useIdeas } from "@/hooks/use-ideas"
@@ -20,7 +25,7 @@ import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Skeleton } from "@/components/ui/skeleton"
 import { formatDate, isWorkday, getGreeting } from "@/lib/utils"
-import { AlertTriangle, ArrowUpRight, BookOpen, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, CircleDot, Clock3, Lightbulb, Plus, Radar, Sparkles } from "lucide-react"
+import { AlertTriangle, ArrowUpRight, BookOpen, Calculator, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, CircleDot, Clock3, Lightbulb, Plus, Radar, Sparkles } from "lucide-react"
 
 export default function DashboardPage() {
   const [assistantOpen, setAssistantOpen] = useState(false)
@@ -39,7 +44,28 @@ export default function DashboardPage() {
   const { todos, loading: todosLoading, toggleTodo, updateTodo, refetch: refetchTodos } = useTodos()
   const { contents, loading: contentsLoading } = useContents()
   const { habits, completedIds, loading: habitsLoading, toggleToday } = useHabits()
-  const { projects, loading: projectsLoading } = useProjects()
+  const { projects, loading: projectsLoading, error: projectsError, refetch: refetchProjects } = useProjects()
+  const { items: timelineItems, loading: timelineLoading, error: timelineError, updateItem: updateTimelineItem } = useProjectTimeline()
+  const [editingSchedule, setEditingSchedule] = useState<ProjectTimelineItem | null>(null)
+  const editSchedule = (id: string) => {
+    const item = timelineItems.find((record) => record.id === id)
+    if (item) setEditingSchedule(item)
+  }
+  const scheduleEvents = useMemo(() => projectScheduleCalendarItems(timelineItems, projects), [timelineItems, projects])
+  useEffect(() => {
+    let refreshedAt = 0
+    const refreshSchedule = () => {
+      if (document.visibilityState !== "visible" || Date.now() - refreshedAt < 1000) return
+      refreshedAt = Date.now()
+      void Promise.allSettled([refetchProjects()])
+    }
+    window.addEventListener("focus", refreshSchedule)
+    document.addEventListener("visibilitychange", refreshSchedule)
+    return () => {
+      window.removeEventListener("focus", refreshSchedule)
+      document.removeEventListener("visibilitychange", refreshSchedule)
+    }
+  }, [refetchProjects])
   const { meetings } = useMeetings()
   const { items: researchItems } = useResearchItems()
   const { ideas } = useIdeas()
@@ -103,7 +129,7 @@ export default function DashboardPage() {
     ...validationCalendar(validationStore.tasks),
     ...activeTodos.filter((item) => item.due_date).map((item) => ({ id: `task-${item.id}`, date: item.due_date!, title: item.title, detail: item.description || item.next_action || "", type: "task" as const, href: "/todos", time: "全天" })),
     ...meetings.filter((item) => item.meeting_date).map((item) => ({ id: `meeting-${item.id}`, date: item.meeting_date!, title: item.title, detail: item.summary || "", type: "meeting" as const, href: "/meetings", time: timeLabel(item.meeting_date!) })),
-    ...projects.filter((item) => item.status !== "archived" && item.status !== "completed" && item.due_date).map((item) => ({ id: `project-${item.id}`, date: item.due_date!, title: item.title, detail: item.next_action || item.stage || "", type: "project" as const, href: "/projects", time: "节点" })),
+    ...scheduleEvents,
   ]
 
   const changeTaskStatus = async (id:string, status:"todo"|"in_progress"|"waiting"|"completed") => {
@@ -135,14 +161,14 @@ export default function DashboardPage() {
             <CardContent className="bg-[#173f31] p-1.5">{loading ? <Skeleton className="h-20 bg-white/10" /> : focusTodos.length ? <div>{focusTodos.map((todo, index) => <div key={todo.id} className="flex min-h-9 items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-white/5"><Checkbox checked={todo.completed} onCheckedChange={() => void toggleTodo(todo.id)} className="h-3.5 w-3.5 border-white/35 data-[state=checked]:bg-[#c9f45a] data-[state=checked]:text-[#102a21]" /><span className="text-[8px] font-bold text-[#c9f45a]">0{index + 1}</span><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-semibold">{todo.title}</p></div>{todo.due_date && <span className="hidden shrink-0 text-[9px] text-white/40 sm:inline">{shortDate(todo.due_date)}</span>}<select aria-label={`更新${todo.title}的状态`} value={todo.status || "todo"} onChange={(event)=>void changeTaskStatus(todo.id,event.target.value as "todo"|"in_progress"|"waiting"|"completed")} className={`h-6 max-w-[82px] shrink-0 rounded-full border px-2 text-[9px] font-semibold outline-none transition-colors ${taskStatusClass(todo.status)}`}><option className="bg-white text-[#173f31]" value="todo">待处理</option><option className="bg-white text-[#173f31]" value="in_progress">进行中</option><option className="bg-white text-[#173f31]" value="waiting">等待跟进</option><option className="bg-white text-[#173f31]" value="completed">已完成</option></select></div>)}</div> : <EmptyDark text="今天没有必须立刻处理的任务。" />}</CardContent>
           </Card>
 
-          <Card className="border-[#b8d0b2] bg-[#f7faf3]"><CardContent className="flex h-full flex-col p-2.5"><button onClick={() => setAssistantOpen((value) => !value)} className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#c9f45a] text-[#102a21]"><Sparkles className="h-3.5 w-3.5" /></span><span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-[#173f31]">AI 任务助手</span><span className="block truncate text-[9px] text-[#5c7468]">说一句话，自动整理任务</span></span><ChevronDown className={`h-3.5 w-3.5 text-[#5c7468] transition-transform ${assistantOpen ? "rotate-180" : ""}`} /></button>{assistantOpen&&<div className="mt-2"><AiTaskInbox compact onApplied={() => void refetchTodos()} /></div>}<div className="mt-auto border-t border-[#d7e3d2] pt-2"><div className="grid grid-cols-4 gap-1.5"><CompactActionLink href="/content" label="上传剧本" icon={BookOpen} /><CompactActionLink href="/todos" label="添加任务" icon={Plus} /><CompactActionLink href="/discover" label="记录灵感" icon={Lightbulb} /><CompactActionLink href="/research" label="新建调研" icon={Radar} /></div></div></CardContent></Card>
+          <Card className="border-[#b8d0b2] bg-[#f7faf3]"><CardContent className="flex h-full flex-col p-2.5"><button onClick={() => setAssistantOpen((value) => !value)} className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#c9f45a] text-[#102a21]"><Sparkles className="h-3.5 w-3.5" /></span><span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-[#173f31]">AI 任务助手</span><span className="block truncate text-[9px] text-[#5c7468]">说一句话，自动整理任务</span></span><ChevronDown className={`h-3.5 w-3.5 text-[#5c7468] transition-transform ${assistantOpen ? "rotate-180" : ""}`} /></button>{assistantOpen&&<div className="mt-2"><AiTaskInbox compact onApplied={() => void refetchTodos()} /></div>}<div className="mt-auto border-t border-[#d7e3d2] pt-2"><div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3"><CompactActionLink href="/content" label="上传剧本" icon={BookOpen} /><CompactActionLink href="/localization" label="字数统计" icon={Calculator} /><CompactActionLink href="/todos" label="添加任务" icon={Plus} /><CompactActionLink href="/discover" label="记录灵感" icon={Lightbulb} /><CompactActionLink href="/research" label="新建调研" icon={Radar} /></div></div></CardContent></Card>
         </section>
 
         <ValidationReminder store={validationStore} />
 
         <DailyBriefCard />
 
-        <section>
+        <section aria-label="工作台日历">
           <Card className="overflow-hidden">
             <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
               <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1"><p className="section-kicker">CALENDAR</p><CardTitle className="text-base">{calendarView==="week"?"本周日程":"本月日程"}</CardTitle><p className="text-[10px] text-muted-foreground">{calendarView==="week"?`${monthDay(weekStart)} — ${monthDay(weekEnd)}`:`${visibleMonth.getFullYear()}年${visibleMonth.getMonth()+1}月`} · 任务、会议与项目节点</p></div>
@@ -154,15 +180,15 @@ export default function DashboardPage() {
                   {weekDays.map((day) => {
                     const key = localDateKey(day)
                     const isToday = key === todayKey
-                    const dayItems = calendarItems.filter((item) => item.date.slice(0, 10) === key).sort((a, b) => a.time.localeCompare(b.time))
-                    return <div key={key} className={`min-h-[150px] ${isToday ? "bg-[#c9f45a]/[.11]" : "bg-card"}`}>
+                    const dayItems = calendarItems.filter((item) => calendarItemOnDate(item, key)).sort((a, b) => a.time.localeCompare(b.time))
+                    return <div key={key} aria-label={`${key} 日程`} className={`min-h-[150px] ${isToday ? "bg-[#c9f45a]/[.11]" : "bg-card"}`}>
                       <div className={`flex items-center justify-between border-b border-border/50 px-2.5 py-2 ${isToday ? "text-primary" : ""}`}><span className="text-[10px] text-muted-foreground">周{"一二三四五六日"[dayIndexMonday(day)]}</span><span className={`flex h-7 min-w-7 items-center justify-center rounded-full px-1 text-xs font-semibold ${isToday ? "bg-[#173f31] text-[#c9f45a]" : ""}`}>{day.getMonth() + 1}/{day.getDate()}</span></div>
-                      <div className="space-y-1 p-1.5">{dayItems.length ? dayItems.slice(0, 4).map((item) => <Link key={item.id} href={item.href} className={`block rounded-md border-l-2 px-1.5 py-1 transition-opacity hover:opacity-75 ${calendarItemClass(item.type)}`}><p className="line-clamp-2 text-[9px] font-semibold leading-3">{item.title}</p>{item.detail&&item.detail!==item.title&&<p className="mt-0.5 line-clamp-2 text-[7px] leading-[10px] opacity-70">{item.detail}</p>}<p className="mt-0.5 text-[7px] leading-[10px] opacity-55">{item.time} · {calendarTypeLabel(item.type)}</p></Link>) : <p className="py-5 text-center text-[10px] text-muted-foreground/45">暂无安排</p>}{dayItems.length > 4 && <p className="px-1 text-[9px] font-semibold text-muted-foreground">还有 {dayItems.length - 4} 项</p>}</div>
+                      <div className="space-y-1 p-1.5">{dayItems.length ? dayItems.map((item) => <CalendarEvent key={item.id} item={item} onEdit={editSchedule} />) : <p className="py-5 text-center text-[10px] text-muted-foreground/45">暂无安排</p>}</div>
                     </div>
                   })}
                 </div>
-              </div>:<MonthCalendar days={monthDays} month={visibleMonth.getMonth()} todayKey={todayKey} items={calendarItems}/>}
-              <div className="flex flex-wrap items-center gap-4 border-t border-border/60 px-4 py-2 text-[10px] text-muted-foreground"><Legend color="bg-emerald-500" label="任务" /><Legend color="bg-sky-500" label="会议" /><Legend color="bg-amber-500" label="项目节点" /><span className="ml-auto hidden sm:inline">在任务中心、会议与项目页面设置日期后会自动出现在这里</span></div>
+              </div>:<MonthCalendar days={monthDays} month={visibleMonth.getMonth()} todayKey={todayKey} items={calendarItems} onEdit={editSchedule}/>}
+              <div className="flex flex-wrap items-center gap-4 border-t border-border/60 px-4 py-2 text-[10px] text-muted-foreground"><Legend color="bg-emerald-500" label="任务" /><Legend color="bg-sky-500" label="会议" /><Legend color="bg-violet-500" label="内容部" /><Legend color="bg-amber-500" label="制作部" /><Legend color="bg-slate-400" label="协同事项" /><span className={`ml-auto ${timelineError || projectsError ? "text-destructive" : ""}`} role="status">{timelineError || projectsError ? "项目排期读取失败，请刷新重试" : timelineLoading || projectsLoading ? "正在同步项目排期…" : `${CURRENT_SCHEDULE_LABEL} · 已同步 ${scheduleEvents.length} 个有日期节点`}</span></div>
             </CardContent>
           </Card>
         </section>
@@ -175,7 +201,7 @@ export default function DashboardPage() {
         <section>
           <div className="mb-2 flex items-end justify-between"><div><p className="section-kicker">WORKFLOW</p><h2 className="mt-1 text-xl font-semibold">工作流快照</h2></div><p className="hidden text-xs text-muted-foreground sm:block">只呈现下一步需要行动的信息</p></div>
           <div className="grid gap-3 xl:grid-cols-3">
-            <SnapshotCard title="收稿与审稿" eyebrow="EDITORIAL" href="/content" icon={BookOpen}><div className="grid grid-cols-4 gap-1.5"><MiniMetric label="待审核" value={pendingReview.length} /><MiniMetric label="审核中" value={reviewing.length} /><MiniMetric label="已审核" value={reviewed.length} /><MiniMetric label="高分" value={candidates.length} accent /></div><p className="mt-3 text-[11px] text-muted-foreground">高分候选包含在已审核中，不重复计入总量。</p></SnapshotCard>
+            <SnapshotCard title="收稿与审稿" eyebrow="EDITORIAL" href="/content" icon={BookOpen}><div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3"><MiniMetric label="待审核" value={pendingReview.length} /><MiniMetric label="审核中" value={reviewing.length} /><MiniMetric label="已审核" value={reviewed.length} /><MiniMetric label="高分" value={candidates.length} accent /></div><p className="mt-3 text-[11px] text-muted-foreground">高分候选包含在已审核中，不重复计入总量。</p></SnapshotCard>
             <SnapshotCard title="项目推进" eyebrow="PROJECTS" href="/projects" icon={CircleDot}>{activeProjects.length ? <div className="space-y-2">{activeProjects.slice(0, 4).map((item) => <Link href="/projects" key={item.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3"><div className="min-w-0"><p className="truncate text-xs font-semibold">{item.title}</p><p className="mt-0.5 truncate text-[10px] text-muted-foreground">{item.next_action || item.stage}</p></div><div className="text-right"><p className="text-xs font-semibold text-primary">{item.progress}%</p><p className="text-[9px] text-muted-foreground">{item.due_date ? shortDate(item.due_date) : "未定期"}</p></div></Link>)}</div> : <EmptyLight text="还没有正在推进的项目。" />}</SnapshotCard>
             <SnapshotCard title="选题与市场" eyebrow="INSIGHTS" href="/discover" icon={Radar}><div className="flex items-center justify-between rounded-xl bg-secondary/55 px-3 py-2"><span className="text-xs text-muted-foreground">待调研事项</span><strong className="text-lg">{pendingResearch.length}</strong></div><div className="mt-2 space-y-1.5">{freshIdeas.length ? freshIdeas.map((idea) => <Link href="/discover" key={idea.id} className="flex items-center gap-2 rounded-lg border border-border/60 px-2.5 py-2"><Lightbulb className="h-3.5 w-3.5 shrink-0 text-primary" /><span className="min-w-0 flex-1 truncate text-xs">{idea.title}</span><Badge variant="outline" className="text-[9px]">{idea.status}</Badge></Link>) : <EmptyLight text="还没有最新选题信号。" />}</div></SnapshotCard>
           </div>
@@ -186,20 +212,34 @@ export default function DashboardPage() {
           <Card><CardHeader className="flex-row items-center justify-between px-4 py-3"><div><p className="section-kicker">UP NEXT</p><CardTitle className="mt-1 text-base">近期会议与复盘</CardTitle></div><Link href="/meetings"><ArrowUpRight className="h-4 w-4 text-muted-foreground" /></Link></CardHeader><CardContent className="space-y-2 px-4 pb-4 pt-0">{nextMeetings.length ? nextMeetings.map((meeting) => <Link href="/meetings" key={meeting.id} className="flex items-center gap-3 rounded-xl border border-border/65 px-3 py-2"><CalendarDays className="h-4 w-4 shrink-0 text-primary" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{meeting.title}</p><p className="text-[10px] text-muted-foreground">{meeting.meeting_date ? formatDate(meeting.meeting_date) : "待定"} · {meeting.meeting_type}</p></div></Link>) : <p className="text-xs text-muted-foreground">近期没有已安排的会议。</p>}<Link href="/reports" className="flex items-center justify-between rounded-xl bg-amber-500/[.07] px-3 py-2 text-xs font-semibold text-amber-800"><span className="flex items-center gap-2"><Clock3 className="h-3.5 w-3.5" />下班前完成工作复盘</span><ChevronRight className="h-3.5 w-3.5" /></Link></CardContent></Card>
         </section>
       </div>
+      {editingSchedule && <ScheduleItemEditor key={editingSchedule.id} item={editingSchedule} projectTitle={projects.find((project) => project.id === editingSchedule.project_id)?.title} onClose={() => setEditingSchedule(null)} onSave={updateTimelineItem} />}
     </AppLayout>
   )
 }
 
 function localDateKey(date: Date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}` }
-type CalendarItem = { id: string; date: string; title: string; detail: string; type: "task" | "meeting" | "project"; href: string; time: string }
-function MonthCalendar({days,month,todayKey,items}:{days:Date[];month:number;todayKey:string;items:CalendarItem[]}) { return <div className="bg-card"><div className="grid grid-cols-7 border-b border-border/60 bg-muted/25">{"一二三四五六日".split("").map((day)=><div key={day} className="px-1 py-1.5 text-center text-[9px] font-semibold text-muted-foreground">周{day}</div>)}</div><div className="grid grid-cols-7">{days.map((day)=>{const key=localDateKey(day);const dayItems=items.filter((item)=>item.date.slice(0,10)===key).sort((a,b)=>a.time.localeCompare(b.time));const isToday=key===todayKey;const muted=day.getMonth()!==month;return <div key={key} className={`min-h-[82px] border-b border-r border-border/50 p-1 last:border-r-0 sm:min-h-[94px] ${isToday?"bg-[#c9f45a]/[.12]":muted?"bg-muted/15":"bg-card"}`}><div className="mb-1 flex items-center justify-between"><span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[9px] font-semibold ${isToday?"bg-[#173f31] text-[#c9f45a]":muted?"text-muted-foreground/45":"text-[#355849]"}`}>{day.getDate()}</span>{dayItems.length>0&&<span className="text-[7px] text-muted-foreground">{dayItems.length}项</span>}</div><div className="space-y-0.5">{dayItems.slice(0,3).map((item)=><Link key={item.id} href={item.href} title={`${calendarTypeLabel(item.type)} · ${item.title}`} className={`flex items-center gap-1 rounded px-1 py-0.5 text-[7px] leading-[10px] hover:opacity-75 sm:text-[8px] ${item.type==="meeting"?"bg-sky-500/10 text-sky-950":item.type==="project"?"bg-amber-500/10 text-amber-950":"bg-emerald-500/10 text-emerald-950"}`}><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${item.type==="meeting"?"bg-sky-500":item.type==="project"?"bg-amber-500":"bg-emerald-500"}`}/><span className="truncate">{item.title}</span></Link>)}{dayItems.length>3&&<p className="px-1 text-[7px] font-semibold text-muted-foreground">+{dayItems.length-3} 项</p>}</div></div>})}</div></div> }
+function MonthCalendar({ days, month, todayKey, items, onEdit }: { days: Date[]; month: number; todayKey: string; items: CalendarItem[]; onEdit: (id: string) => void }) {
+  return <div className="overflow-x-auto bg-card">
+    <div className="min-w-[820px]">
+      <div className="grid grid-cols-7 border-b border-border/60 bg-muted/25">{"一二三四五六日".split("").map((day) => <div key={day} className="px-1 py-1.5 text-center text-[10px] font-semibold text-muted-foreground">周{day}</div>)}</div>
+      <div className="grid grid-cols-7">{days.map((day) => {
+        const key = localDateKey(day)
+        const dayItems = items.filter((item) => calendarItemOnDate(item, key)).sort((a, b) => a.time.localeCompare(b.time))
+        const isToday = key === todayKey
+        const muted = day.getMonth() !== month
+        return <div key={key} aria-label={`${key} 日程`} className={`min-h-[94px] border-b border-r border-border/50 p-1.5 last:border-r-0 ${isToday ? "bg-[#c9f45a]/[.12]" : muted ? "bg-muted/15" : "bg-card"}`}>
+          <div className="mb-1 flex items-center justify-between"><span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-semibold ${isToday ? "bg-[#173f31] text-[#c9f45a]" : muted ? "text-muted-foreground/45" : "text-[#355849]"}`}>{day.getMonth() + 1}/{day.getDate()}</span>{dayItems.length > 0 && <span className="text-[9px] text-muted-foreground">{dayItems.length}项</span>}</div>
+          <div className="space-y-1">{dayItems.map((item) => <CalendarEvent key={item.id} item={item} onEdit={onEdit} compact />)}</div>
+        </div>
+      })}</div>
+    </div>
+  </div>
+}
 function startOfWeekMonday(date: Date) { const result = new Date(date); result.setHours(0, 0, 0, 0); const day = result.getDay(); result.setDate(result.getDate() - (day === 0 ? 6 : day - 1)); return result }
 function addDays(date: Date, count: number) { const result = new Date(date); result.setDate(result.getDate() + count); return result }
 function dayIndexMonday(date: Date) { return date.getDay() === 0 ? 6 : date.getDay() - 1 }
 function monthDay(date: Date) { return `${date.getMonth() + 1}月${date.getDate()}日` }
 function timeLabel(value: string) { const date = new Date(value); if (Number.isNaN(date.getTime()) || !value.includes("T")) return "全天"; return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}` }
-function calendarTypeLabel(type: CalendarItem["type"]) { return type === "meeting" ? "会议" : type === "project" ? "项目节点" : "任务" }
-function calendarItemClass(type: CalendarItem["type"]) { return type === "meeting" ? "border-sky-500 bg-sky-500/10 text-sky-950" : type === "project" ? "border-amber-500 bg-amber-500/10 text-amber-950" : "border-emerald-500 bg-emerald-500/10 text-emerald-950" }
 function taskStatusClass(status: string) { return status === "in_progress" ? "border-[#b6df43] bg-[#c9f45a] text-[#173f31]" : status === "waiting" ? "border-[#e0b94f] bg-[#f2d57d] text-[#4d3b05]" : status === "completed" ? "border-[#79b891] bg-[#a9d7b8] text-[#153d2c]" : "border-[#d7ddd6] bg-[#f0f2ed] text-[#385046]" }
 function Legend({ color, label }: { color: string; label: string }) { return <span className="flex items-center gap-1.5"><span className={`h-2 w-2 rounded-full ${color}`} />{label}</span> }
 function shortDate(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value.slice(5, 10) : `${date.getMonth() + 1}/${date.getDate()}` }

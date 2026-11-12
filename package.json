@@ -1,7 +1,9 @@
 {
   "name": "workbench",
   "version": "0.1.0",
-  "overrides": { "wasm-feature-detect": "1.8.0" },
+  "overrides": {
+    "wasm-feature-detect": "1.8.0"
+  },
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -10,7 +12,8 @@
     "review-worker": "tsx scripts/review-worker.ts",
     "test:adx-schedule": "tsx --test tests/adx-scheduler.test.ts",
     "test:workspace-access": "tsx --test tests/workspace-access.test.ts",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:script-statistics": "tsx --test tests/script-statistics*.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.2.2",
@@ -53,7 +56,8 @@
     "undici": "^6.29.0",
     "word-extractor": "^1.0.4",
     "xlsx": "^0.18.5",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "saxes": "^5.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -3,7 +3,7 @@ export type ProjectStage = (typeof PROJECT_STAGES)[number]
 export const PROJECT_STAGE_DETAILS: Record<ProjectStage, string> = {
   "采购与合同": "拟购买、合同推进",
   "剧本开发": "前30集、后30集、整体修改、完本定稿",
-  "本地化与围读": "翻译审校、双语稿确认、全员围读",
+  "本地化与围读": "外部译稿验收、双语稿资料、全员围读",
   "制作与上线": "美术资产、抽卡制作、成片交付、上线",
   "完成归档": "资料归档、项目复盘",
 }
