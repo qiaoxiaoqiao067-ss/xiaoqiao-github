@@ -53,7 +53,7 @@ export async function POST(req:NextRequest){try{
  const bytes=Buffer.from(await blob.arrayBuffer()),sha256=createHash('sha256').update(bytes).digest('hex')
  let payload:ReportPayload,units
  try{const parsed=await parseReport(bytes,record.payload.extension);units=parsed.units;const parsedPath=`${owner}/market-reports/${record.id}/parsed-${sha256}.json`
-  const saved=await serviceClient.storage.from('content-files').upload(parsedPath,Buffer.from(JSON.stringify(units)),{contentType:'application/json',upsert:false});if(saved.error&&!/already exists|duplicate/i.test(saved.error.message))throw saved.error
+  const saved=await serviceClient.storage.from('content-files').upload(parsedPath,Buffer.from(JSON.stringify(units)),{contentType:'text/plain',upsert:false});if(saved.error&&!/already exists|duplicate/i.test(saved.error.message))throw saved.error
   payload={...record.payload,sha256,parsedPath,status:parsed.status,unitCount:units.length,emptyUnits:parsed.emptyUnits,error:parsed.emptyUnits?'部分页面没有可提取文字，请逐页对照原附件；未进行OCR。':undefined}
  }catch(e){payload={...record.payload,sha256,status:'解析失败',error:(e instanceof Error?e.message:'无法读取该报告').slice(0,500)}}
  const updated=await serviceClient.from('market_data_imports').update({raw_rows:[payload],updated_at:new Date().toISOString()}).eq('id',record.id).eq('user_id',owner).eq('source_name',REPORT_SOURCE).eq('updated_at',record.updated_at)
