@@ -25,6 +25,8 @@ npx tsx scripts/sync-adx-daily.ts --owner <工作台所有者UUID> --root /Users
 - 各榜：`name`、`actual`、`data_date`、`sort`、`status`（success或partial_source_shortfall）、`filters`（extra_filters、merge_same_drama、only_new_drama均false），可附`note`。
 - 标准化数据：`data_date`、`rows`；每行有board、rank、title、tags、sort、channel、数值指标、source_url、captured_at及raw原始字段。排名从1连续，指标为有限非负数或null，0不改为空，缺失不补0。
 
+已完成批次可以包含尚未发布的榜单：必须显式记录`status=awaiting_source_publication`、`actual=0`、`data_date/sort/filters=null`、正确的`requested_data_date`及非空原因。缺榜不能夹带任何标准化行，不能伪造空表或写入旧日数据；其余通过完整校验的榜单可同期发布，页面明确显示缺榜。全部榜单无数据时不作为成功批次发布。
+
 日期、条数、排序、筛选、榜单身份或排名校验不通过时整批不写入；试跑只保留本地。原始行不先筛AI，保存采集时间、筛选、排序、备注、校验和及原始页面字段。分析按每榜Top50执行，不在榜外补齐AI条数；“待核验/异常”源表不产生确定跨期判断。
 
 ## 持久化与恢复

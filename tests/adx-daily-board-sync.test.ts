@@ -42,3 +42,15 @@ test('daily dates and deltas use adjacent days and exact board/channel; preserve
  assert.ok(dailyWorkObservations(series,'Target','b').every(o=>o.rank===null))
  assert.equal(trackIdentity('ADX:tiktok-hot','Target','a'),trackIdentity('ADX:tiktok-hot',' Target ','a'))
 })
+test('unpublished boards do not block verified peers or become empty/old daily boards',()=>{
+ const f=fixture(2)
+ const pending={name:'DramaBox',actual:0,sort:null,data_date:null,status:'awaiting_source_publication',note:'目标日未发布',filters:null,requested_data_date:'2026-11-10',latest_available_date:'2026-11-09'}
+ const manifest={...f.manifest,status:'completed_with_source_gaps',boards:[...f.manifest.boards,pending]}
+ const items=prepareDailyBoards(manifest,f.standard,'run','hash')
+ assert.equal(items.length,1);assert.equal(items[0].row_count,2)
+ assert.throws(()=>prepareDailyBoards({...manifest,boards:[...f.manifest.boards,{...pending,requested_data_date:'2026-11-09'}]},f.standard,'run','hash'))
+ assert.throws(()=>prepareDailyBoards({...manifest,boards:[...f.manifest.boards,{...pending,actual:1}]},f.standard,'run','hash'))
+ assert.throws(()=>prepareDailyBoards({...manifest,boards:[...f.manifest.boards,{...pending,name:'TikTok短剧热播榜'}]},f.standard,'run','hash'))
+ assert.throws(()=>prepareDailyBoards({...manifest,actual_records:3},{...f.standard,rows:[...f.standard.rows,{...row(1),board:'DramaBox'}]},'run','hash'))
+ assert.throws(()=>prepareDailyBoards({...manifest,actual_records:0,boards:[pending]},{...f.standard,rows:[]},'run','hash'))
+})

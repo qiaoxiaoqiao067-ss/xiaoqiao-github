@@ -4,7 +4,7 @@ import path from 'node:path'
 import {createHash} from 'node:crypto'
 import {isDeepStrictEqual} from 'node:util'
 import {loadEnvConfig} from '@next/env'
-import {AUTO_DAILY_SOURCE,DAILY_SYNC_SOURCE,prepareDailyBoards,dailyBatchTotals,dailyBoardIdentity,type DailySyncStatus} from '../src/lib/adx/daily-board-sync'
+import {AUTO_DAILY_SOURCE,DAILY_SYNC_SOURCE,prepareDailyBoards,pendingDailyBoards,dailyBatchTotals,dailyBoardIdentity,type DailySyncStatus} from '../src/lib/adx/daily-board-sync'
 import {makeDailyBrief} from '../src/lib/adx/daily-brief'
 function idFor(value:string){const h=createHash('sha256').update(value).digest('hex');return `${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`}
 async function main(){
@@ -35,7 +35,8 @@ async function main(){
      const changes=items.filter(i=>{const old=existing.data?.find(o=>o.id===i.id);return !old||!isDeepStrictEqual(old.raw_rows,i.raw_rows)||!isDeepStrictEqual(old.columns,i.columns)||old.row_count!==i.row_count})
      if(!args.includes('--dry-run')&&changes.length){const result=await serviceClient.from('market_data_imports').upsert(changes.map(i=>({...i,updated_at:new Date().toISOString()})),{onConflict:'id'});if(result.error)throw new Error(result.error.message)}
      published+=changes.length;unchanged+=items.length-changes.length
-     status={...status,state:'synced',...dailyBatchTotals(prepared),checksum,note:brief.note||'正式日榜已同步，按每榜Top50分析'}
+     const missingBoards=pendingDailyBoards(manifest)
+     status={...status,state:'synced',...dailyBatchTotals(prepared),checksum,...(missingBoards.length?{missingBoards}:{}),note:brief.note||'正式日榜已同步，按每榜Top50分析'}
    }catch(e){failed++;status={...status,state:'sync_failed',note:`本批次未发布：${e instanceof Error?e.message:'数据校验或写入失败'}`}}
    if(!args.includes('--dry-run')){
      const id=idFor(`${owner}:daily-sync:${runKey}`)

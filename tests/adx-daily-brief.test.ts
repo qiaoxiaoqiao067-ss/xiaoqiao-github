@@ -21,3 +21,7 @@ test('missing or conflicting report dates are not silently inferred',()=>{
  assert.throws(()=>makeDailyBrief({data_date:'2026-11-09',status:'completed',checked_at:'2026-11-11T00:00:00Z'},report,'bad'),/日期/)
  assert.throws(()=>makeDailyBrief({data_date:'2026-11-10',status:'completed'},report,'bad'),/时间/)
 })
+test('partial source coverage shows collected boards rather than requested board count',()=>{
+ const brief=makeDailyBrief({data_date:'2026-11-11',status:'completed_with_source_gaps',checked_at:'2026-11-12T03:00:00Z',ranking_count:14,collected_ranking_count:13},null,'partial')
+ assert.equal(brief.boardCount,13)
+})
