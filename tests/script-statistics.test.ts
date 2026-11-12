@@ -91,6 +91,50 @@ test("OS markers do not damage Latin names and parenthetical OS speech survives"
   assert.equal(os.uncertain, true)
 })
 
+test("action-prefixed cues and bracketed voiceovers are spoken, while repeated labels and acting cues are not", () => {
+  const s = source("第1集", "1-1 日 内", "人物：阿明、狱警1、女犯人1",
+    "△狱警1（讥讽，拿着刀）：回去。", "【VO阿明：我会回来】", "【OS 阿明】：别怕。",
+    "女犯人1：女犯人：你好。", "阿明：走。（讽刺）（情绪爆发）（跟着去，其他人也跟着！）（狡辩）（坚韧）（懊恼）（惧怕）（蹲）",
+    "△阿明走到门口：身后的墙是红色。", "阿明：你听到了吗？（你为什么不回答？）")
+  const r = analyzeScript(s)
+  assert.equal(r.totals.dialogue, 23)
+  assert.equal(r.lines[3].content, "回去。")
+  assert.equal(r.lines[3].uncertain, true)
+  assert.equal(r.lines[4].voiceover, true)
+  assert.equal(r.lines[5].voiceover, true)
+  assert.equal(r.lines[6].content, "你好。")
+  assert.equal(r.lines[6].uncertain, true)
+  assert.equal(r.lines[7].content, "走。")
+  assert.equal(r.lines[8].kind, "action")
+  assert.equal(r.lines[9].uncertain, true)
+  assert.equal(analyzeScript(s, { includeVoiceover: false }).totals.dialogue, 17)
+})
+
+test("a standalone VO or OS label is a valid speaker cue", () => {
+  const r = analyzeScript(source(...intro, "VO：请联系银行。", "OS：我要回家。", "阿明：（举杯）欢迎。（逼近一步）（打量阿红）（不可置信）"))
+  assert.equal(r.totals.dialogue, 11)
+  assert.equal(r.lines[3].voiceover, true)
+  assert.equal(r.lines[4].voiceover, true)
+  assert.equal(r.lines[5].content, "欢迎。")
+})
+
+test("standalone speaker labels consume their soft-break dialogue before action continuation", async () => {
+  const s = await sourceFromText("第1集\n\n1-1 日 内\n\n人物：阿明、阿红\n\nVO：\n他终于回家了。\n\n阿明：\n我会回来。\n\n阿红\n请进。", "独立标签.txt")
+  const r = analyzeScript(s)
+  assert.equal(r.totals.dialogue, 12)
+  assert.equal(r.lines.find(line => line.content === "他终于回家了。")?.voiceover, true)
+  assert.equal(analyzeScript(s, { includeVoiceover: false }).totals.dialogue, 6)
+  assert.equal(r.needsReview, true)
+})
+
+test("bracketed camera directions are not billable screen copy", () => {
+  const r = analyzeScript(source(...intro, "【画面定格，黑场】", "【慢动作】", "【近景：他的手。】", "【切至门外】", "【镜头停留在面纱】", "【字幕：第二天】", "【短信：晚上见】",
+    "【特写：阿明看着门外。】", "【阿明主观镜头】", "【快速蒙太奇】", "【特写：手机上显示“回家”。】", "【证词特写：我证明事情属实。】"))
+  assert.equal(r.totals.screen, 15)
+  assert.equal(r.lines.slice(3, 8).every(line => line.kind === "action"), true)
+  assert.equal(r.lines.slice(10, 13).every(line => line.kind === "action"), true)
+})
+
 test("explicit machine speech and repeated shouts count; unspoken mouths and quote descriptions do not", () => {
   const s = source(...intro, "阿明：停！", "△阿明又喊道：“停！”", "△刷卡机发出“交易成功”的提示音。", "△“停”声音很轻。", "△阿红嘴唇动了动，却说不出那个“是”字。", "△阿红的口型是“回家”。")
   const r = analyzeScript(s)
@@ -173,13 +217,16 @@ test("DOCX pictures are flagged instead of silently claiming complete readable t
 
 // Private reference scripts and expected counts live outside the repository.
 // A manifest entry is {path, format?:"extracted-json", startEpisode?,
-// endEpisode?, expectedDialogue}. Extracted JSON has {paragraphs:[{text}]}.
+// endEpisode?, expectedDialogue, expectedFull?, expectedTranscriptPath?}.
+// Transcripts are independently reviewed spoken strings in source order.
+// Extracted JSON has {paragraphs:[{text}]}.
 // Set this explicit, task-specific variable to opt into private regression data.
 const externalManifest = process.env.SCRIPT_STATISTICS_FIXTURE_MANIFEST
 test("optional external reference fixture manifest", { skip: !externalManifest }, async () => {
   const manifestPath = resolve(externalManifest!)
   const fixtures = JSON.parse(await readFile(manifestPath, "utf8")) as Array<{
     path: string; format?: "extracted-json"; startEpisode?: number; endEpisode?: number; expectedDialogue: number
+    expectedFull?: number; expectedTranscriptPath?: string
   }>
   const escapeXml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
   for (const fixture of fixtures) {
@@ -194,5 +241,23 @@ test("optional external reference fixture manifest", { skip: !externalManifest }
     const result = analyzeScript(parsed, { startEpisode: fixture.startEpisode, endEpisode: fixture.endEpisode })
     assert.equal(result.totals.dialogue, fixture.expectedDialogue, `reference mismatch: ${fixture.path}`)
     assert.equal(result.episodes.reduce((sum, row) => sum + row.dialogue, 0), fixture.expectedDialogue)
+    if (fixture.expectedFull !== undefined) assert.equal(result.totals.full, fixture.expectedFull, `full reference mismatch: ${fixture.path}`)
+    if (fixture.expectedTranscriptPath) {
+      const transcript = JSON.parse(await readFile(resolve(dirname(manifestPath), fixture.expectedTranscriptPath), "utf8")) as string[]
+      const han = (text: string) => (text.match(/[\p{Unified_Ideograph}〇]/gu) || []).join("")
+      const selected = result.lines.filter(line => line.kind === "dialogue" && line.episode !== null
+        && line.episode >= (fixture.startEpisode ?? -Infinity) && line.episode <= (fixture.endEpisode ?? Infinity))
+      // A soft break inside the same speaker's paragraph is one utterance in
+      // the independent ledger; explicit new speaker cues stay separate.
+      const utterances: { paragraph: number; speaker?: string; text: string }[] = []
+      for (const line of selected) {
+        const previous = utterances.at(-1)
+        if (previous && previous.paragraph === line.paragraph && previous.speaker === line.speaker && line.reason === "同段换行续文，继承前一行的类别") previous.text += line.content
+        else utterances.push({ paragraph: line.paragraph, speaker: line.speaker, text: line.content })
+      }
+      const actual = utterances.map(line => han(line.text)).filter(Boolean), expected = transcript.map(han).filter(Boolean)
+      assert.equal(actual.length, expected.length, `utterance count mismatch: ${fixture.path}`)
+      for (let index = 0; index < expected.length; index += 1) assert.equal(actual[index], expected[index], `utterance ${index + 1} mismatch: ${fixture.path}`)
+    }
   }
 })
