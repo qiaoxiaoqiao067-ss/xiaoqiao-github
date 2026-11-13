@@ -1,7 +1,7 @@
 export const SHARED_PAGES = {'/content':'content','/projects':'projects','/market-data':'market_data','/discover':'discover'} as const
 const personalPages=['/todos','/reports','/docs','/ai-learning','/research','/meetings','/knowledge','/localization','/settings']
 const personalApis=['/api/tasks','/api/reports','/api/documents','/api/generate-report','/api/weekly-report','/api/meetings','/api/knowledge-files','/api/ai-learning','/api/localization']
-const personalTables=['todos','habits','habit_logs','meetings','research_items','knowledge_items']
+const personalTables=['todos','habits','habit_logs','meetings','research_items','knowledge_items','task_inbox','task_events','daily_reports','weekly_reports','documents','ai_learnings','localization_jobs']
 const within=(path:string,root:string)=>path===root||path.startsWith(root+'/')
 export function routeAccess(path:string):'owner'|keyof typeof SHARED_PAGES|'public'{
  try{path=decodeURIComponent(path)}catch{return 'owner'}
