@@ -8,7 +8,7 @@ import { useContents } from "@/hooks/use-contents"
 import { useHabits } from "@/hooks/use-habits"
 import { useProjects } from "@/hooks/use-projects"
 import { useProjectTimeline, type ProjectTimelineItem } from "@/hooks/use-project-timeline"
-import { calendarItemOnDate, projectScheduleCalendarItems, type CalendarItem } from "@/lib/projects/calendar-schedule"
+import { calendarItemOnDate, filterCalendarItems, projectScheduleCalendarItems, type CalendarItem, type CalendarScheduleFilter } from "@/lib/projects/calendar-schedule"
 import { CalendarEvent } from "@/components/projects/calendar-event"
 import { ScheduleItemEditor } from "@/components/projects/schedule-item-editor"
 import { CURRENT_SCHEDULE_LABEL } from "@/lib/projects/schedule-versions"
@@ -32,6 +32,7 @@ export default function DashboardPage() {
   const [weekOffset, setWeekOffset] = useState(0)
   const [calendarView, setCalendarView] = useState<"week"|"month">("week")
   const [monthOffset, setMonthOffset] = useState(0)
+  const [calendarFilter, setCalendarFilter] = useState<CalendarScheduleFilter>({ department: "all", projectId: "all", status: "all" })
   const [attentionStates, setAttentionStates] = useState<Record<string, { status: AttentionStatus; signature: string }>>({})
   useEffect(() => {
     try {
@@ -132,6 +133,12 @@ export default function DashboardPage() {
     ...scheduleEvents,
   ]
 
+  const filteredCalendarItems = filterCalendarItems(calendarItems, calendarFilter)
+  const calendarFilterActive = calendarFilter.department !== "all" || calendarFilter.projectId !== "all" || calendarFilter.status !== "all"
+  const calendarProjects = [...projects].filter((project) => project.status !== "archived").sort((a, b) => (a.project_no ?? 999999) - (b.project_no ?? 999999) || a.title.localeCompare(b.title, "zh-CN"))
+  const visibleCalendarDays = calendarView === "week" ? weekDays : monthDays
+  const matchingScheduleCount = filteredCalendarItems.filter((item) => item.type === "project" && visibleCalendarDays.some((day) => calendarItemOnDate(item, localDateKey(day)))).length
+
   const changeTaskStatus = async (id:string, status:"todo"|"in_progress"|"waiting"|"completed") => {
     await updateTodo(id, { status })
   }
@@ -174,20 +181,27 @@ export default function DashboardPage() {
               <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1"><p className="section-kicker">CALENDAR</p><CardTitle className="text-base">{calendarView==="week"?"本周日程":"本月日程"}</CardTitle><p className="text-[10px] text-muted-foreground">{calendarView==="week"?`${monthDay(weekStart)} — ${monthDay(weekEnd)}`:`${visibleMonth.getFullYear()}年${visibleMonth.getMonth()+1}月`} · 任务、会议与项目节点</p></div>
               <div className="flex items-center gap-1"><div className="mr-1 flex rounded-full border border-border bg-muted/40 p-0.5"><button onClick={()=>setCalendarView("week")} className={`h-7 rounded-full px-3 text-[10px] font-semibold ${calendarView==="week"?"bg-[#173f31] text-[#c9f45a]":"text-muted-foreground"}`}>本周</button><button onClick={()=>setCalendarView("month")} className={`h-7 rounded-full px-3 text-[10px] font-semibold ${calendarView==="month"?"bg-[#173f31] text-[#c9f45a]":"text-muted-foreground"}`}>本月</button></div><button aria-label={calendarView==="week"?"上一周":"上个月"} onClick={() => calendarView==="week"?setWeekOffset((value) => value - 1):setMonthOffset((value)=>value-1)} className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-background hover:bg-secondary"><ChevronLeft className="h-3.5 w-3.5" /></button><button onClick={() => calendarView==="week"?setWeekOffset(0):setMonthOffset(0)} className="h-7 rounded-full border border-border bg-background px-2.5 text-[10px] font-semibold hover:bg-secondary">今天</button><button aria-label={calendarView==="week"?"下一周":"下个月"} onClick={() => calendarView==="week"?setWeekOffset((value) => value + 1):setMonthOffset((value)=>value+1)} className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-background hover:bg-secondary"><ChevronRight className="h-3.5 w-3.5" /></button></div>
             </CardHeader>
+            <div aria-label="日历筛选" className="flex flex-wrap items-center gap-2 border-b border-border/50 bg-muted/10 px-3 py-2">
+              <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><span>部门</span><select aria-label="筛选部门" value={calendarFilter.department} onChange={(event) => setCalendarFilter((current) => ({ ...current, department: event.target.value as CalendarScheduleFilter["department"] }))} className="h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"><option value="all">全部部门</option><option value="内容部">内容部</option><option value="制作部">制作部</option><option value="协同事项">协同事项</option></select></label>
+              <label className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground"><span className="shrink-0">项目</span><select aria-label="筛选项目" value={calendarFilter.projectId} onChange={(event) => setCalendarFilter((current) => ({ ...current, projectId: event.target.value }))} className="h-8 w-[190px] max-w-full rounded-lg border border-border bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:w-[240px]"><option value="all">全部项目</option>{calendarProjects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}</select></label>
+              <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><span>状态</span><select aria-label="筛选状态" title="未完成：待开始、进行中、已暂停；已延期单独筛选" value={calendarFilter.status} onChange={(event) => setCalendarFilter((current) => ({ ...current, status: event.target.value as CalendarScheduleFilter["status"] }))} className="h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"><option value="all">全部状态</option><option value="unfinished">未完成</option><option value="completed">已完成</option><option value="delayed">已延期</option></select></label>
+              {calendarFilterActive && <button type="button" onClick={() => setCalendarFilter({ department: "all", projectId: "all", status: "all" })} className="rounded-lg px-2 py-1.5 text-xs text-primary hover:bg-secondary">显示全部</button>}
+              {calendarFilterActive && <span role="status" className="ml-auto text-[11px] text-muted-foreground">{matchingScheduleCount ? `显示 ${matchingScheduleCount} 个排期节点` : "当前无匹配排期"}</span>}
+            </div>
             <CardContent className="p-0">
               {calendarView==="week"?<div className="overflow-x-auto">
                 <div className="grid min-w-[820px] grid-cols-7 divide-x divide-border/60">
                   {weekDays.map((day) => {
                     const key = localDateKey(day)
                     const isToday = key === todayKey
-                    const dayItems = calendarItems.filter((item) => calendarItemOnDate(item, key)).sort((a, b) => a.time.localeCompare(b.time))
+                    const dayItems = filteredCalendarItems.filter((item) => calendarItemOnDate(item, key)).sort((a, b) => a.time.localeCompare(b.time))
                     return <div key={key} aria-label={`${key} 日程`} className={`min-h-[150px] ${isToday ? "bg-[#c9f45a]/[.11]" : "bg-card"}`}>
                       <div className={`flex items-center justify-between border-b border-border/50 px-2.5 py-2 ${isToday ? "text-primary" : ""}`}><span className="text-[10px] text-muted-foreground">周{"一二三四五六日"[dayIndexMonday(day)]}</span><span className={`flex h-7 min-w-7 items-center justify-center rounded-full px-1 text-xs font-semibold ${isToday ? "bg-[#173f31] text-[#c9f45a]" : ""}`}>{day.getMonth() + 1}/{day.getDate()}</span></div>
                       <div className="space-y-1 p-1.5">{dayItems.length ? dayItems.map((item) => <CalendarEvent key={item.id} item={item} onEdit={editSchedule} />) : <p className="py-5 text-center text-[10px] text-muted-foreground/45">暂无安排</p>}</div>
                     </div>
                   })}
                 </div>
-              </div>:<MonthCalendar days={monthDays} month={visibleMonth.getMonth()} todayKey={todayKey} items={calendarItems} onEdit={editSchedule}/>}
+              </div>:<MonthCalendar days={monthDays} month={visibleMonth.getMonth()} todayKey={todayKey} items={filteredCalendarItems} onEdit={editSchedule}/>}
               <div className="flex flex-wrap items-center gap-4 border-t border-border/60 px-4 py-2 text-[10px] text-muted-foreground"><Legend color="bg-emerald-500" label="任务" /><Legend color="bg-sky-500" label="会议" /><Legend color="bg-violet-500" label="内容部" /><Legend color="bg-amber-500" label="制作部" /><Legend color="bg-slate-400" label="协同事项" /><span className={`ml-auto ${timelineError || projectsError ? "text-destructive" : ""}`} role="status">{timelineError || projectsError ? "项目排期读取失败，请刷新重试" : timelineLoading || projectsLoading ? "正在同步项目排期…" : `${CURRENT_SCHEDULE_LABEL} · 已同步 ${scheduleEvents.length} 个有日期节点`}</span></div>
             </CardContent>
           </Card>
