@@ -1,5 +1,5 @@
 import type { Project } from "@/hooks/use-projects"
-import type { ProjectTimelineItem } from "@/hooks/use-project-timeline"
+import type { ProjectTimelineItem, TimelineStatus } from "@/hooks/use-project-timeline"
 import { scheduleDepartment, type ScheduleDepartment } from "./department-schedule"
 import { partitionScheduleVersions } from "./schedule-versions"
 
@@ -15,17 +15,25 @@ export type CalendarItem = {
   scheduleId?: string
   projectId?: string
   department?: ScheduleDepartment
+  scheduleStatus?: TimelineStatus
 }
 
-export type CalendarScheduleFilter = { department: ScheduleDepartment | "all"; projectId: string }
+export type CalendarScheduleFilter = {
+  department: ScheduleDepartment | "all"
+  projectId: string
+  status: "all" | "unfinished" | "completed" | "delayed"
+}
 
 export function filterCalendarItems(items: CalendarItem[], filters: CalendarScheduleFilter): CalendarItem[] {
-  if (filters.department === "all" && filters.projectId === "all") return items
-  // Tasks and meetings have no authoritative project/department association.
+  if (filters.department === "all" && filters.projectId === "all" && filters.status === "all") return items
+  // Tasks and meetings have no authoritative schedule status or project/department association.
   // An active schedule filter therefore shows matching project milestones only.
   return items.filter((item) => item.type === "project"
     && (filters.department === "all" || item.department === filters.department)
-    && (filters.projectId === "all" || item.projectId === filters.projectId))
+    && (filters.projectId === "all" || item.projectId === filters.projectId)
+    && (filters.status === "all" || (filters.status === "unfinished"
+      ? item.scheduleStatus === "planned" || item.scheduleStatus === "active" || item.scheduleStatus === "paused"
+      : item.scheduleStatus === filters.status)))
 }
 
 function isDate(value: string) {
@@ -47,6 +55,7 @@ export function projectScheduleCalendarItems(items: ProjectTimelineItem[], proje
       scheduleId: item.id,
       projectId: item.project_id,
       department: scheduleDepartment(item.track),
+      scheduleStatus: item.status,
       date: item.start_date,
       endDate: item.end_date,
       title: project,

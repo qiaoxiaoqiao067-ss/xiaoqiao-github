@@ -32,7 +32,7 @@ export default function DashboardPage() {
   const [weekOffset, setWeekOffset] = useState(0)
   const [calendarView, setCalendarView] = useState<"week"|"month">("week")
   const [monthOffset, setMonthOffset] = useState(0)
-  const [calendarFilter, setCalendarFilter] = useState<CalendarScheduleFilter>({ department: "all", projectId: "all" })
+  const [calendarFilter, setCalendarFilter] = useState<CalendarScheduleFilter>({ department: "all", projectId: "all", status: "all" })
   const [attentionStates, setAttentionStates] = useState<Record<string, { status: AttentionStatus; signature: string }>>({})
   useEffect(() => {
     try {
@@ -134,7 +134,7 @@ export default function DashboardPage() {
   ]
 
   const filteredCalendarItems = filterCalendarItems(calendarItems, calendarFilter)
-  const calendarFilterActive = calendarFilter.department !== "all" || calendarFilter.projectId !== "all"
+  const calendarFilterActive = calendarFilter.department !== "all" || calendarFilter.projectId !== "all" || calendarFilter.status !== "all"
   const calendarProjects = [...projects].filter((project) => project.status !== "archived").sort((a, b) => (a.project_no ?? 999999) - (b.project_no ?? 999999) || a.title.localeCompare(b.title, "zh-CN"))
   const visibleCalendarDays = calendarView === "week" ? weekDays : monthDays
   const matchingScheduleCount = filteredCalendarItems.filter((item) => item.type === "project" && visibleCalendarDays.some((day) => calendarItemOnDate(item, localDateKey(day)))).length
@@ -184,7 +184,8 @@ export default function DashboardPage() {
             <div aria-label="日历筛选" className="flex flex-wrap items-center gap-2 border-b border-border/50 bg-muted/10 px-3 py-2">
               <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><span>部门</span><select aria-label="筛选部门" value={calendarFilter.department} onChange={(event) => setCalendarFilter((current) => ({ ...current, department: event.target.value as CalendarScheduleFilter["department"] }))} className="h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"><option value="all">全部部门</option><option value="内容部">内容部</option><option value="制作部">制作部</option><option value="协同事项">协同事项</option></select></label>
               <label className="flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground"><span className="shrink-0">项目</span><select aria-label="筛选项目" value={calendarFilter.projectId} onChange={(event) => setCalendarFilter((current) => ({ ...current, projectId: event.target.value }))} className="h-8 w-[190px] max-w-full rounded-lg border border-border bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:w-[240px]"><option value="all">全部项目</option>{calendarProjects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}</select></label>
-              {calendarFilterActive && <button type="button" onClick={() => setCalendarFilter({ department: "all", projectId: "all" })} className="rounded-lg px-2 py-1.5 text-xs text-primary hover:bg-secondary">显示全部</button>}
+              <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground"><span>状态</span><select aria-label="筛选状态" title="未完成：待开始、进行中、已暂停；已延期单独筛选" value={calendarFilter.status} onChange={(event) => setCalendarFilter((current) => ({ ...current, status: event.target.value as CalendarScheduleFilter["status"] }))} className="h-8 rounded-lg border border-border bg-background px-2 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"><option value="all">全部状态</option><option value="unfinished">未完成</option><option value="completed">已完成</option><option value="delayed">已延期</option></select></label>
+              {calendarFilterActive && <button type="button" onClick={() => setCalendarFilter({ department: "all", projectId: "all", status: "all" })} className="rounded-lg px-2 py-1.5 text-xs text-primary hover:bg-secondary">显示全部</button>}
               {calendarFilterActive && <span role="status" className="ml-auto text-[11px] text-muted-foreground">{matchingScheduleCount ? `显示 ${matchingScheduleCount} 个排期节点` : "当前无匹配排期"}</span>}
             </div>
             <CardContent className="p-0">
