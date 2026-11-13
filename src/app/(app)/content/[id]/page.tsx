@@ -1,5 +1,7 @@
 "use client"
 
+import { useModuleEdit, EditOnly } from "@/components/permissions/workspace-permissions"
+
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
@@ -93,6 +95,8 @@ async function readApiResponse(response: Response, fallback: string) {
 }
 
 export default function ContentDetailPage() {
+  const canEdit = useModuleEdit("content")
+
   const params = useParams<{ id: string }>()
   const router = useRouter()
   const uploadInput = useRef<HTMLInputElement>(null)
@@ -315,12 +319,12 @@ export default function ContentDetailPage() {
           <div className="relative flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div><div className="mb-3 flex flex-wrap gap-2"><Badge className="bg-[#c9f45a] text-[#102a21]">{content.content_type}</Badge><Badge variant="outline" className="border-white/20 text-white">处理状态 · {TECH_STATUS_LABEL[content.status] || content.status}</Badge>{latestHuman && <Badge variant="outline" className="border-white/20 text-white">责编判断 · {normalizeVerdict(latestHuman.result?.verdict) || latestHuman.result?.verdict}</Badge>}{content.status==="archived"&&content.archived_at&&<Badge variant="outline" className="border-white/20 text-white">归档于 {new Date(content.archived_at).toLocaleDateString("zh-CN")}</Badge>}</div><h1 className="text-4xl font-medium tracking-[-.065em] sm:text-5xl">{content.title}</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-white/55">{content.logline || "自动梗概待补充"}</p></div>
           <div className="flex min-w-0 flex-wrap justify-end gap-2">
-            <input ref={uploadInput} type="file" accept=".doc,.docx,.pdf,.txt,.md,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(event) => void uploadVersion(event.target.files?.[0])} />
-            <Button variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white" disabled={uploading} onClick={() => uploadInput.current?.click()}>{uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}{uploading ? "正在上传并识别…" : "上传新版本"}</Button>
+            <EditOnly module="content"><input ref={uploadInput} type="file" accept=".doc,.docx,.pdf,.txt,.md,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(event) => void uploadVersion(event.target.files?.[0])} /></EditOnly>
+            <EditOnly module="content"><Button variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white" disabled={uploading} onClick={() => uploadInput.current?.click()}>{uploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}{uploading ? "正在上传并识别…" : "上传新版本"}</Button></EditOnly>
             <select value={codexMode} onChange={(event) => setCodexMode(event.target.value)} className="h-9 max-w-[8rem] rounded-md border border-white/20 bg-white/5 px-2 text-xs text-white"><option className="text-foreground">业务审核</option><option className="text-foreground">合规审核</option><option className="text-foreground">爆款对比</option><option className="text-foreground">风格分析</option></select>
             <Button variant="outline" className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white" disabled={!files[0]?.extracted_text} onClick={() => void copyCodexReviewPack}><Copy className="mr-2 h-4 w-4" />{copiedCodex ? "已复制AI审核包" : "复制AI审核包"}</Button>
-            <Button className="bg-[#c9f45a] text-[#102a21] hover:bg-[#d8ff76]" disabled={!canReview || reviewing || Boolean(activeReview)} onClick={runReview}>{reviewing || activeReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{reviewing ? "正在加入队列…" : activeReview ? "后台审核中…" : latestFailedReview ? "重新加入审核队列" : latestReview ? "再次加入审核队列" : "开始后台AI审核"}</Button>
-            <Button variant="outline" className="border-white/20 bg-white/5 text-white hover:border-red-200 hover:bg-red-500/15 hover:text-red-100" onClick={() => setShowDelete(true)}><Trash2 className="mr-2 h-4 w-4" />删除剧本</Button>
+            <EditOnly module="content"><Button className="bg-[#c9f45a] text-[#102a21] hover:bg-[#d8ff76]" disabled={!canReview || reviewing || Boolean(activeReview)} onClick={runReview}>{reviewing || activeReview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}{reviewing ? "正在加入队列…" : activeReview ? "后台审核中…" : latestFailedReview ? "重新加入审核队列" : latestReview ? "再次加入审核队列" : "开始后台AI审核"}</Button></EditOnly>
+            <EditOnly module="content"><Button variant="outline" className="border-white/20 bg-white/5 text-white hover:border-red-200 hover:bg-red-500/15 hover:text-red-100" onClick={() => setShowDelete(true)}><Trash2 className="mr-2 h-4 w-4" />删除剧本</Button></EditOnly>
           </div>
           </div>
         </div>
@@ -337,28 +341,28 @@ export default function ContentDetailPage() {
             {reviews.length > 0 && <Card><CardHeader><CardTitle className="text-base">审核历史</CardTitle></CardHeader><CardContent className="space-y-2">{reviews.slice(0, 8).map((review) => <div key={review.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"><div><span className="font-medium">{review.reviewer_type === "ai" ? "AI审核" : "人工责编"}</span>{review.reviewer_type === "ai" && review.model && <span className="ml-2 text-xs text-muted-foreground">{formatModelName(review.model)}</span>}<span className="ml-2 text-xs text-muted-foreground">{new Date(review.created_at).toLocaleString("zh-CN")}</span></div><div className="flex items-center gap-2"><Badge variant={review.status === "completed" ? "secondary" : review.status === "failed" ? "destructive" : "outline"}>{review.status === "completed" ? "已完成" : review.status === "failed" ? "失败" : review.status === "running" ? "审核中" : "待处理"}</Badge>{review.score != null && <span className="font-semibold">{review.score}/100</span>}</div></div>)}</CardContent></Card>}
             <Card><CardHeader><CardTitle className="text-base">我的最终责编判断</CardTitle></CardHeader><CardContent className="space-y-4">
               {latestHuman && <div className="rounded-lg border bg-muted/30 p-3"><div className="flex items-center justify-between"><Badge>{normalizeVerdict(latestHuman.result?.verdict) || latestHuman.result?.verdict || "已判断"}</Badge><span className="font-bold">{latestHuman.score}/100</span></div><p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{latestHuman.result?.notes}</p></div>}
-              <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
+              <EditOnly module="content"><div className="grid gap-3 sm:grid-cols-[1fr_120px]">
                 <select value={humanVerdict} onChange={(event) => setHumanVerdict(event.target.value as HumanVerdict)} className="h-9 rounded-md border bg-background px-3 text-sm"><option>审核通过</option><option>退修</option><option>不采用</option></select>
                 <input type="number" min="0" max="100" value={humanScore} onChange={(event) => setHumanScore(event.target.value)} className="h-9 rounded-md border bg-background px-3 text-sm" aria-label="人工评分" />
               </div>
               <Textarea value={humanNotes} onChange={(event) => setHumanNotes(event.target.value)} rows={5} placeholder="填写你的最终判断、修改要求和是否进入开发…" />
-              <div className="rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-4"><p className="mb-2 text-xs font-semibold text-primary">导入外部AI审核草稿</p><Textarea value={codexResultText} onChange={(event) => setCodexResultText(event.target.value)} rows={4} placeholder="粘贴外部AI输出的JSON或文字结果，点击导入后请人工确认。" /><Button variant="outline" size="sm" className="mt-2" onClick={importCodexResult} disabled={!codexResultText.trim()}>导入到责编判断</Button></div>
-              <Button onClick={saveHumanReview} disabled={savingHuman || !humanNotes.trim()}>{savingHuman && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{latestHuman ? "更新最终判断" : "保存最终判断"}</Button>
+              <div className="rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-4"><p className="mb-2 text-xs font-semibold text-primary">导入外部AI审核草稿</p><Textarea value={codexResultText} onChange={(event) => setCodexResultText(event.target.value)} rows={4} placeholder="粘贴外部AI输出的JSON或文字结果，点击导入后请人工确认。" /><EditOnly module="content"><Button variant="outline" size="sm" className="mt-2" onClick={importCodexResult} disabled={!codexResultText.trim()}>导入到责编判断</Button></EditOnly></div>
+              <EditOnly module="content"><Button onClick={saveHumanReview} disabled={savingHuman || !humanNotes.trim()}>{savingHuman && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{latestHuman ? "更新最终判断" : "保存最终判断"}</Button></EditOnly></EditOnly>
             </CardContent></Card>
             {normalizeVerdict(latestHuman?.result?.verdict) === "审核通过" && <Card className="overflow-hidden border-[#a9c884]/60"><CardHeader className="bg-[#f3f8ec]"><CardTitle className="flex items-center gap-2 text-base text-[#174c39]"><CheckCircle2 className="h-5 w-5" />审核通过后的推进动作</CardTitle><p className="text-sm text-muted-foreground">这些是业务动作，不会改变稿件的技术处理状态。可按实际情况选择，不要求按固定顺序执行。</p></CardHeader><CardContent className="space-y-4 pt-5">
               {linkedProject && <div className="flex flex-col gap-2 rounded-xl border bg-muted/25 p-3 text-sm sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">已关联项目：{linkedProject.title}</p><p className="text-xs text-muted-foreground">当前阶段：{linkedProject.stage} · 下一步：{linkedProject.next_action || "待补充"}</p></div><Button asChild size="sm" variant="outline"><Link href={`/projects/${linkedProject.id}`}>查看项目</Link></Button></div>}
-              <div className="grid gap-3 sm:grid-cols-2">
+              <EditOnly module={["content","projects"]}><div className="grid gap-3 sm:grid-cols-2">
                 <DevelopmentActionButton icon={FolderKanban} title="建立项目" description="正式进入项目推进并安排开发计划" loading={projectAction === "create"} disabled={Boolean(linkedProject) || Boolean(projectAction)} onClick={() => void advanceToDevelopment("create")} />
                 <DevelopmentActionButton icon={CheckCircle2} title="标记拟购买" description="记录采购意向，下一步确认合同要点" loading={projectAction === "purchase"} disabled={Boolean(projectAction)} onClick={() => void advanceToDevelopment("purchase")} />
                 <DevelopmentActionButton icon={FileSignature} title="进入合同审批" description="项目内管理合同，正式审批仍在飞书完成" loading={projectAction === "contract"} disabled={Boolean(projectAction)} onClick={() => void advanceToDevelopment("contract")} />
                 <DevelopmentActionButton icon={PenLine} title="进入定制修改" description="按责编意见推进剧本修改或定制写作" loading={projectAction === "revision"} disabled={Boolean(projectAction)} onClick={() => void advanceToDevelopment("revision")} />
-              </div>
+              </div></EditOnly>
             </CardContent></Card>}
             {files[0]?.extracted_text && <Card><CardHeader><CardTitle className="text-base">解析正文预览</CardTitle></CardHeader><CardContent><pre className="max-h-[480px] overflow-auto whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{files[0].extracted_text}</pre></CardContent></Card>}
           </div>
         </div>
       </div>
-      <DeleteContentDialog title={content.title} open={showDelete} deleting={deleting} onCancel={() => !deleting && setShowDelete(false)} onConfirm={() => void deleteContent()} />
+      <DeleteContentDialog title={content.title} open={canEdit && showDelete} deleting={deleting} onCancel={() => !deleting && setShowDelete(false)} onConfirm={() => void deleteContent()} />
     </AppLayout>
   )
 }

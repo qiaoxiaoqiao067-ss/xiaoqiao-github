@@ -1,5 +1,7 @@
 "use client"
 
+import { useModuleEdit, EditOnly } from "@/components/permissions/workspace-permissions"
+
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { AppLayout } from "@/components/layout/app-layout"
@@ -30,6 +32,8 @@ const parseErrorLabel = (error?: string | null) => error?.includes("Could not fi
   : error || "文件无法解析，请重新上传有效文件。"
 
 export default function ContentPage() {
+  const canEdit = useModuleEdit("content")
+
   const { contents, loading, error, fetchContents, addContent, uploadScripts, deleteContent, setContentStatus } = useContents()
   const fileInput = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState("")
@@ -70,7 +74,7 @@ export default function ContentPage() {
   }
 
   const processQueuedUploads = useCallback(async (entries: QueuedContentUpload[]) => {
-    if (!entries.length) return
+    if (!canEdit || !entries.length) return
     setUploading(true)
     setUploadMessage("")
     setUploadErrors([])
@@ -105,7 +109,7 @@ export default function ContentPage() {
     setUploadProgress("")
     setUploading(false)
     if (authExpired) window.location.assign("/login?next=/content")
-  }, [uploadScripts])
+  }, [uploadScripts, canEdit])
 
   const handleFiles = async (files: FileList | null) => {
     if (!files?.length) return
@@ -116,13 +120,13 @@ export default function ContentPage() {
   }
 
   useEffect(() => {
-    if (resumedQueue.current) return
+    if (!canEdit || resumedQueue.current) return
     resumedQueue.current = true
     void getQueuedContentUploads().then((entries) => {
       setQueuedUploads(entries)
       if (entries.length) void processQueuedUploads(entries)
     })
-  }, [processQueuedUploads])
+  }, [processQueuedUploads, canEdit])
 
   const createContent = async () => {
     if (!title.trim()) return
@@ -244,20 +248,20 @@ export default function ContentPage() {
     <AppLayout>
       <div className="space-y-6">
         <PageHero eyebrow="投稿 · AI初审 · 人工判断" title="责编审稿" description="管理投稿、开发项目、对标内容和个人创作，让每个故事都有清晰的下一步。" action={<div className="flex flex-col gap-2 sm:flex-row">
-            <input ref={fileInput} type="file" multiple accept=".doc,.docx,.pdf,.txt,.md,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(event) => void handleFiles(event.target.files)} />
-            <select value={uploadType} onChange={(event) => setUploadType(event.target.value as ContentItem["content_type"])} className="h-9 rounded-md border border-[#c9f45a]/60 bg-[#235a43] px-2 text-xs font-semibold text-[#efffd1] shadow-sm"><option className="bg-white text-[#173f31]" value="submission">投稿剧本</option><option className="bg-white text-[#173f31]" value="benchmark">优秀对标库</option><option className="bg-white text-[#173f31]" value="development">重点开发</option><option className="bg-white text-[#173f31]" value="original">我的创作</option></select>
-            <Button variant="outline" disabled={uploading} onClick={() => fileInput.current?.click()} className="gap-2 border-white/20 bg-white/5 text-white hover:bg-white hover:text-[#102a21]">
+            <EditOnly module="content"><input ref={fileInput} type="file" multiple accept=".doc,.docx,.pdf,.txt,.md,.png,.jpg,.jpeg,.webp" className="hidden" onChange={(event) => void handleFiles(event.target.files)} /></EditOnly>
+            <EditOnly module="content"><select value={uploadType} onChange={(event) => setUploadType(event.target.value as ContentItem["content_type"])} className="h-9 rounded-md border border-[#c9f45a]/60 bg-[#235a43] px-2 text-xs font-semibold text-[#efffd1] shadow-sm"><option className="bg-white text-[#173f31]" value="submission">投稿剧本</option><option className="bg-white text-[#173f31]" value="benchmark">优秀对标库</option><option className="bg-white text-[#173f31]" value="development">重点开发</option><option className="bg-white text-[#173f31]" value="original">我的创作</option></select></EditOnly>
+            <EditOnly module="content"><Button variant="outline" disabled={uploading} onClick={() => fileInput.current?.click()} className="gap-2 border-white/20 bg-white/5 text-white hover:bg-white hover:text-[#102a21]">
               {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               {uploading ? `上传中 ${uploadProgress}` : uploadType === "benchmark" ? "导入优秀对标" : "批量上传剧本"}
-            </Button>
-            <Button variant="outline" disabled={batchReviewing || !reviewableContents.length} onClick={() => void handleBatchReview()} className="gap-2 border-[#c9f45a]/60 bg-[#c9f45a]/10 text-[#c9f45a] hover:bg-[#c9f45a] hover:text-[#102a21]">
+            </Button></EditOnly>
+            <EditOnly module="content"><Button variant="outline" disabled={batchReviewing || !reviewableContents.length} onClick={() => void handleBatchReview()} className="gap-2 border-[#c9f45a]/60 bg-[#c9f45a]/10 text-[#c9f45a] hover:bg-[#c9f45a] hover:text-[#102a21]">
               {batchReviewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               {batchReviewing ? `加入队列 ${batchReviewProgress}` : `批量开始审核${batchQueueContents.length ? `（${batchQueueContents.length}/20）` : ""}`}
-            </Button>
-            <Button onClick={() => setShowNew((value) => !value)} className="gap-2 bg-[#c9f45a] text-[#102a21] hover:bg-[#d8ff74] sm:w-auto">
+            </Button></EditOnly>
+            <EditOnly module="content"><Button onClick={() => setShowNew((value) => !value)} className="gap-2 bg-[#c9f45a] text-[#102a21] hover:bg-[#d8ff74] sm:w-auto">
               {showNew ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
               {showNew ? "取消" : "新建内容"}
-            </Button>
+            </Button></EditOnly>
           </div>} />
 
         {uploadMessage && <div className={`rounded-lg p-3 text-sm ${uploadErrors.length ? "bg-amber-500/10 text-amber-800 dark:text-amber-300" : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"}`}>
@@ -267,9 +271,9 @@ export default function ContentPage() {
           </div>}
         </div>}
 
-        {queuedUploads.length > 0 && !uploading && <div className="flex flex-col gap-3 rounded-xl border border-amber-300/50 bg-amber-50/70 p-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+        {canEdit && queuedUploads.length > 0 && !uploading && <div className="flex flex-col gap-3 rounded-xl border border-amber-300/50 bg-amber-50/70 p-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">
           <div><p className="font-semibold">待续传文件 {queuedUploads.length} 个</p><p className="mt-1 text-xs text-amber-800">{queuedUploads.slice(0, 3).map((item) => item.fileName).join("、")}{queuedUploads.length > 3 ? ` 等 ${queuedUploads.length} 个` : ""}</p></div>
-          <Button size="sm" variant="outline" onClick={() => void processQueuedUploads(queuedUploads)}><RotateCcw className="mr-1 h-3.5 w-3.5"/>继续上传</Button>
+          <EditOnly module="content"><Button size="sm" variant="outline" onClick={() => void processQueuedUploads(queuedUploads)}><RotateCcw className="mr-1 h-3.5 w-3.5"/>继续上传</Button></EditOnly>
         </div>}
 
         <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
@@ -280,7 +284,7 @@ export default function ContentPage() {
           <Stat label="推荐开发" value={loading ? "—" : recommended} />
         </div>
 
-        {showNew && (
+        {canEdit && showNew && (
           <Card>
             <CardHeader><CardTitle className="text-base">建立内容项目</CardTitle></CardHeader>
             <CardContent className="grid gap-3 md:grid-cols-2">
@@ -292,9 +296,9 @@ export default function ContentPage() {
               <div className="md:col-span-2">
                 <Textarea value={logline} onChange={(event) => setLogline(event.target.value)} placeholder="一句话梗概（可选）" rows={3} />
               </div>
-              <Button onClick={createContent} disabled={saving || !title.trim()} className="md:w-fit">
+              <EditOnly module="content"><Button onClick={createContent} disabled={saving || !title.trim()} className="md:w-fit">
                 <FilePlus2 className="mr-2 h-4 w-4" />{saving ? "保存中…" : "建立项目"}
-              </Button>
+              </Button></EditOnly>
             </CardContent>
           </Card>
         )}
@@ -335,13 +339,13 @@ export default function ContentPage() {
                 <div>{hasCompletedAiReview(item) ? <div className="inline-flex min-w-[76px] items-baseline justify-center gap-0.5 whitespace-nowrap rounded-xl border border-[#b8d59f] bg-[#f1f8e9] px-2.5 py-1.5 text-[#205b43]"><span className="mr-1 text-[10px] font-medium">AI评分</span><span className="text-lg font-bold leading-none tabular-nums">{latestAiScore(item)}</span><span className="text-[10px] text-[#527360]">/100</span></div> : <span className="text-sm text-muted-foreground">未审核</span>}</div>
                 {(() => { const preview = reviewPreview(item); return <div className="min-w-0 border-l border-border/70 pl-3"><p className={`truncate text-xs font-semibold ${preview?.tone || "text-muted-foreground"}`}>{preview?.label || "暂无审核结论"}</p><p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground" title={preview?.text}>{preview?.text || "完成 AI 或人工审核后，会在此显示结论摘要。"}</p></div> })()}
                 <div className="space-y-1 text-xs text-muted-foreground"><p className="truncate">{item.source || "未标记来源"}</p><p className="flex items-center gap-1"><Sparkles className="h-3 w-3" />{parseFailed ? "需重新上传" : hasCompletedAiReview(item) ? "AI已完成" : reviewActive ? "AI审核中" : hasReadyFile(item) ? "AI待审核" : "等待文件解析"}</p>{latestReview(item,"human")?.is_final&&<p className="font-medium text-[#205b43]">已人工终审</p>}{item.content_reviews.filter((review)=>review.reviewer_type==="ai"&&review.status==="failed").length>0&&<p className="text-[10px] text-amber-700">曾重试 {item.content_reviews.filter((review)=>review.reviewer_type==="ai"&&review.status==="failed").length} 次</p>}</div>
-                <div className="flex flex-wrap justify-start gap-2 md:justify-end"><Button asChild variant="outline" size="sm"><Link href={`/content/${item.id}`}>{parseFailed ? "重新上传" : "查看详情"}</Link></Button>{item.status === "archived" ? <Button size="sm" variant="outline" onClick={() => void setContentStatus(item.id,hasCompletedAiReview(item)?"reviewed":"ready")}><RotateCcw className="mr-1.5 h-3.5 w-3.5"/>恢复</Button> : <>{hasCompletedAiReview(item) || latestReview(item, "human") ? null : reviewActive ? <Button variant="outline" size="sm" disabled><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />审核中</Button> : parseFailed ? null : hasReadyFile(item) ? <Button size="sm" disabled={queueingIds.includes(item.id)} onClick={() => void handleSingleReview(item)} className="bg-[#c9f45a] text-[#102a21] hover:bg-[#d8ff74]">{queueingIds.includes(item.id) ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}{queueingIds.includes(item.id) ? "加入中" : "开始审核"}</Button> : <Button variant="outline" size="sm" disabled>等待解析</Button>}<Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="移入历史归档" onClick={() => void setContentStatus(item.id,"archived")}><Archive className="h-4 w-4"/></Button></>}<Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title={`删除《${item.title}》`} aria-label={`删除${item.title}`} onClick={() => setDeleteTarget(item)}><Trash2 className="h-4 w-4" /></Button></div>
+                <div className="flex flex-wrap justify-start gap-2 md:justify-end"><Button asChild variant="outline" size="sm"><Link href={`/content/${item.id}`}>{parseFailed && canEdit ? "重新上传" : "查看详情"}</Link></Button>{item.status === "archived" ? <EditOnly module="content"><Button size="sm" variant="outline" onClick={() => void setContentStatus(item.id,hasCompletedAiReview(item)?"reviewed":"ready")}><RotateCcw className="mr-1.5 h-3.5 w-3.5"/>恢复</Button></EditOnly> : <>{hasCompletedAiReview(item) || latestReview(item, "human") ? null : reviewActive ? <Button variant="outline" size="sm" disabled><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />审核中</Button> : parseFailed ? null : hasReadyFile(item) ? <EditOnly module="content"><Button size="sm" disabled={queueingIds.includes(item.id)} onClick={() => void handleSingleReview(item)} className="bg-[#c9f45a] text-[#102a21] hover:bg-[#d8ff74]">{queueingIds.includes(item.id) ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}{queueingIds.includes(item.id) ? "加入中" : "开始审核"}</Button></EditOnly> : <Button variant="outline" size="sm" disabled>等待解析</Button>}<EditOnly module="content"><Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" title="移入历史归档" onClick={() => void setContentStatus(item.id,"archived")}><Archive className="h-4 w-4"/></Button></EditOnly></>}<EditOnly module="content"><Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title={`删除《${item.title}》`} aria-label={`删除${item.title}`} onClick={() => setDeleteTarget(item)}><Trash2 className="h-4 w-4" /></Button></EditOnly></div>
               </div>
             )})}
           </div>
         )}
       </div>
-      <DeleteContentDialog title={deleteTarget?.title || ""} open={Boolean(deleteTarget)} deleting={deleting} onCancel={() => !deleting && setDeleteTarget(null)} onConfirm={() => void handleDelete()} />
+      <DeleteContentDialog title={deleteTarget?.title || ""} open={canEdit && Boolean(deleteTarget)} deleting={deleting} onCancel={() => !deleting && setDeleteTarget(null)} onConfirm={() => void handleDelete()} />
     </AppLayout>
   )
 }

@@ -1,4 +1,5 @@
 "use client"
+import { ReadableAction, EditOnly } from "@/components/permissions/workspace-permissions"
 
 import { useMemo } from "react"
 import { Pencil } from "lucide-react"
@@ -18,7 +19,7 @@ const STATUS: Record<string, string> = { active: "进行中", completed: "已完
 
 function ScheduleNode({ entry, onEdit }: { entry: ScheduleEntry; onEdit: Props["onEdit"] }) {
   const pending = !entry.start
-  return <button
+  return <ReadableAction module="projects"
     type="button"
     onClick={() => onEdit({ ...entry.item, track: displayTimelineTrack(entry.item) })}
     aria-label={`编辑 ${scheduleDateLabel(entry.start, entry.end)} ${entry.title}`}
@@ -26,8 +27,8 @@ function ScheduleNode({ entry, onEdit }: { entry: ScheduleEntry; onEdit: Props["
   >
     <span className={`shrink-0 text-sm font-bold tabular-nums ${pending ? "text-amber-800" : "text-primary"}`}>{scheduleDateLabel(entry.start, entry.end)}</span>
     <span className="min-w-0 flex-1 break-words text-sm leading-5">{entry.title}{!pending && STATUS[entry.item.status] && <span className="ml-2 inline-block text-xs text-muted-foreground">{STATUS[entry.item.status]}</span>}</span>
-    <Pencil aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
-  </button>
+    <EditOnly module="projects"><Pencil aria-hidden="true" className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" /></EditOnly>
+  </ReadableAction>
 }
 
 export function DepartmentSchedule({ projects, items, first, last, onEdit }: Props) {

@@ -1,4 +1,6 @@
-"use client";
+"use client"
+
+import { useModuleEdit, EditOnly } from "@/components/permissions/workspace-permissions";
 
 import {useMonthlyReviews} from '@/hooks/use-monthly-reviews';
 import {ValidationFeedbackPanel} from '@/components/market/validation-feedback';
@@ -578,6 +580,9 @@ function analyze(
 }
 
 export default function MarketDataPage() {
+  const canEdit = useModuleEdit("market_data")
+  const canEditIdeas = useModuleEdit("discover")
+
   const { ideas, addIdea } = useIdeas();
   const fileRef = useRef<HTMLInputElement>(null);
   const chineseNameFileRef = useRef<HTMLInputElement>(null);
@@ -1435,7 +1440,7 @@ export default function MarketDataPage() {
           description="日榜发现信号，周榜验证持续性，月榜形成方向判断。每个来源、每个榜单分别采样，再合并作品与证据。"
           action={
             <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" className="bg-[#c9f45a] text-[#173f31] hover:bg-[#d8ff76]" onClick={() => { setActiveView("data"); setImportExpanded(true); }}>采集 / 上传数据</Button>
+              <EditOnly module="market_data"><Button size="sm" className="bg-[#c9f45a] text-[#173f31] hover:bg-[#d8ff76]" onClick={() => { setActiveView("data"); setImportExpanded(true); }}>采集 / 上传数据</Button></EditOnly>
               {dashboard.datasets.length > 0 && (
                 <Button
                   size="sm"
@@ -1483,13 +1488,13 @@ export default function MarketDataPage() {
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="outline">当前周期 {periodImports.filter(isMarketImport).length} 个文件</Badge>
-              <Button size="sm" variant="outline" onClick={() => setImportExpanded((value) => !value)} aria-expanded={importExpanded}>
+              <EditOnly module="market_data"><Button size="sm" variant="outline" onClick={() => setImportExpanded((value) => !value)} aria-expanded={importExpanded}>
                 {importExpanded ? "收起导入区" : "展开导入区"}
-              </Button>
+              </Button></EditOnly>
             </div>
 
           </div>
-          {importExpanded && <>
+          {canEdit && importExpanded && <>
           <div className="grid gap-4 px-5 py-5 lg:grid-cols-[1.15fr_1fr_1fr_auto] lg:items-end">
             <div className="grid gap-2">
               <span className="text-xs font-medium text-[#456052]">1. 选择榜单类型</span>
@@ -1521,10 +1526,10 @@ export default function MarketDataPage() {
             </label>
             <div>
               <input ref={fileRef} type="file" multiple accept=".xlsx,.xls,.csv" className="hidden" onChange={(event) => void importFile(event)} />
-              <Button disabled={uploading || !uploadPeriod} onClick={() => fileRef.current?.click()} title="可同时选择一个或多个文件" className="h-11 w-full bg-[#c9f45a] px-5 font-semibold text-[#102a21] shadow-sm hover:bg-[#d8ff74] lg:w-auto">
+              <EditOnly module="market_data"><Button disabled={uploading || !uploadPeriod} onClick={() => fileRef.current?.click()} title="可同时选择一个或多个文件" className="h-11 w-full bg-[#c9f45a] px-5 font-semibold text-[#102a21] shadow-sm hover:bg-[#d8ff74] lg:w-auto">
                 {uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Upload className="mr-1.5 h-4 w-4" />}
                 {uploading ? "导入中" : `上传${uploadPeriodKind === "month" ? "月榜" : uploadPeriodKind === "week" ? "周榜" : "日榜"}`}
-              </Button>
+              </Button></EditOnly>
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#dce9d2] bg-white/65 px-5 py-3 text-xs text-[#61766b]">
@@ -1540,7 +1545,7 @@ export default function MarketDataPage() {
             {versionOptions.length > 1 && (
               <label className="flex items-center gap-2">
                 <span>查看版本</span>
-                <select
+                <EditOnly module="market_data"><select
                   value={activeVersionFor(imports, period)}
                   disabled={switchingVersion}
                   onChange={(event) => void switchVersion(event.target.value)}
@@ -1550,7 +1555,7 @@ export default function MarketDataPage() {
                   {versionOptions.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
-                </select>
+                </select></EditOnly>
               </label>
             )}
             <Badge variant="outline">
@@ -1560,7 +1565,7 @@ export default function MarketDataPage() {
           </div>
           </>}
         </section>
-        {pendingImport && (
+        {canEdit && pendingImport && (
           <section className="overflow-hidden rounded-2xl border-2 border-[#aeca86] bg-white shadow-[0_18px_45px_rgba(23,63,49,0.10)]" aria-labelledby="import-preview-title">
             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#dce9d2] bg-[#f5faec] px-5 py-4">
               <div>
@@ -1625,10 +1630,10 @@ export default function MarketDataPage() {
               <p className="text-xs text-[#61766b]">共 {pendingImport.files.length} 个文件，预计写入 {pendingImport.files.reduce((sum, item) => sum + item.rows.length, 0).toLocaleString()} 行。</p>
               <div className="flex gap-2">
                 <Button variant="outline" disabled={uploading} onClick={() => setPendingImport(null)}>取消导入</Button>
-                <Button disabled={uploading} onClick={() => void confirmPendingImport()} className="bg-[#173f31] text-white hover:bg-[#245744]">
+                <EditOnly module="market_data"><Button disabled={uploading} onClick={() => void confirmPendingImport()} className="bg-[#173f31] text-white hover:bg-[#245744]">
                   {uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CircleCheck className="mr-1.5 h-4 w-4" />}
                   {uploading ? "正在写入" : "确认写入数据库"}
-                </Button>
+                </Button></EditOnly>
               </div>
             </div>
           </section>
@@ -1719,14 +1724,14 @@ export default function MarketDataPage() {
             <span className="text-[#6c8075]">
               · 中文译名由源表或AI生成，海外原名始终保留
             </span>
-            <input
+            <EditOnly module="market_data"><input
               ref={chineseNameFileRef}
               type="file"
               accept=".xlsx,.xls,.csv"
               className="hidden"
               onChange={(event) => void importChineseNameMap(event)}
-            />
-            <Button
+            /></EditOnly>
+            <EditOnly module="market_data"><Button
               size="sm"
               variant="outline"
               className="ml-auto h-8 border-[#b9cda9] bg-white text-[#315f4a]"
@@ -1735,15 +1740,15 @@ export default function MarketDataPage() {
             >
               {translating && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
               {translating ? "AI翻译中" : "AI翻译下一批（50部）"}
-            </Button>
-            <Button
+            </Button></EditOnly>
+            <EditOnly module="market_data"><Button
               size="sm"
               variant="outline"
               className="h-8 border-[#b9cda9] bg-white text-[#315f4a]"
               onClick={() => chineseNameFileRef.current?.click()}
             >
               回填中文名映射
-            </Button>
+            </Button></EditOnly>
           </div>
         )}
         {!error && activeView === "overview" && monthlyReviews.error && <p role="alert">{monthlyReviews.error}；暂显示榜单判断。<Button variant="outline" onClick={monthlyReviews.refresh}>重试联合研判</Button></p>}
@@ -2023,7 +2028,7 @@ export default function MarketDataPage() {
         )}
         {analysisMode === "production" && (
           <div className="space-y-6">
-            <div className="space-y-3">{monthlyReviews.loading&&<p role="status" className="text-xs">正在读取报告联合研判，当前先显示榜单判断…</p>}{monthlyReviews.error&&<p role="alert">{monthlyReviews.error}</p>}<Button size="sm" variant="outline" onClick={monthlyReviews.refresh}>刷新报告联合研判</Button><MarketResearchPanel research={marketResearch} onSave={saveResearch} saved={researchSaved} saving={savingIdea} renderReviewEditor={monthlyReviews.canEdit?(finding)=><MonthlyReviewControl finding={finding} period={period} comparison={previousPeriod} record={monthlyReviews.records.find(r=>r.payload.findingId===finding.id)} onSaved={monthlyReviews.replace}/>:undefined}/></div>
+            <div className="space-y-3">{monthlyReviews.loading&&<p role="status" className="text-xs">正在读取报告联合研判，当前先显示榜单判断…</p>}{monthlyReviews.error&&<p role="alert">{monthlyReviews.error}</p>}<Button size="sm" variant="outline" onClick={monthlyReviews.refresh}>刷新报告联合研判</Button><MarketResearchPanel research={marketResearch} onSave={canEditIdeas ? saveResearch : undefined} saved={researchSaved} saving={savingIdea} renderReviewEditor={canEdit && monthlyReviews.canEdit?(finding)=><MonthlyReviewControl finding={finding} period={period} comparison={previousPeriod} record={monthlyReviews.records.find(r=>r.payload.findingId===finding.id)} onSaved={monthlyReviews.replace}/>:undefined}/></div>
             <ValidationFeedbackPanel key={period} period={period}/><ResearchArchive imports={imports} period={period} comparison={previousPeriod} reviewSources={marketResearch.findings.flatMap(f=>f.review?[{id:f.review.id,updated_at:f.review.updated_at}]:[])} />
           </div>
         )}
@@ -2130,10 +2135,10 @@ export default function MarketDataPage() {
                         <span className="truncate text-sm font-medium" title={field}>{field}</span>
                         <span className="shrink-0 text-[10px] text-muted-foreground">自动：{automaticRole}</span>
                       </span>
-                      <select value={fieldRoleMap[field] || ""} onChange={(event) => saveFieldRole(field, event.target.value as FieldRole | "")} aria-label={`设置字段${field}的含义`} className="h-9 rounded-lg border bg-background px-2 text-xs">
+                      <EditOnly module="market_data"><select value={fieldRoleMap[field] || ""} onChange={(event) => saveFieldRole(field, event.target.value as FieldRole | "")} aria-label={`设置字段${field}的含义`} className="h-9 rounded-lg border bg-background px-2 text-xs">
                         <option value="">使用自动识别</option>
                         {(Object.entries(FIELD_ROLE_LABELS) as [FieldRole, string][]).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                      </select>
+                      </select></EditOnly>
                     </label>
                   );
                 })}
@@ -2194,7 +2199,7 @@ export default function MarketDataPage() {
                       </Badge>
                     )}
                   </div>
-                  <Button
+                  <EditOnly module="market_data"><Button
                     variant="ghost"
                     size="icon"
                     title="删除该数据文件"
@@ -2204,7 +2209,7 @@ export default function MarketDataPage() {
                     }
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+                  </Button></EditOnly>
                 </div>
               ))}
             </div>
@@ -2381,23 +2386,24 @@ function ADXCaptureGuide({ onImported }: { onImported: (message: string, period:
           {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={() => void connect()} disabled={working !== null}>{working === "connect" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Database className="mr-1.5 h-4 w-4" />}{status.profileExists ? "打开ADX专用会话" : "连接ADX账号"}</Button>
-          <Button size="sm" variant="outline" onClick={() => void testCapture()} disabled={working !== null}>{working === "test" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-1.5 h-4 w-4" />}测试周榜抓取（不导入）</Button>
-          <Button size="sm" onClick={() => void sync("day")} disabled={working !== null}>{working === "day" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-1.5 h-4 w-4" />}同步短剧日榜 · 前50</Button>
-          <Button size="sm" onClick={() => void sync("week")} disabled={working !== null}>{working === "week" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-1.5 h-4 w-4" />}同步短剧周榜 · 前300</Button>
-          <Button size="sm" onClick={() => void sync("month")} disabled={working !== null}>{working === "month" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-1.5 h-4 w-4" />}同步短剧月榜 · 前500</Button>
+          <EditOnly module="market_data"><Button size="sm" variant="outline" onClick={() => void connect()} disabled={working !== null}>{working === "connect" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Database className="mr-1.5 h-4 w-4" />}{status.profileExists ? "打开ADX专用会话" : "连接ADX账号"}</Button></EditOnly>
+          <EditOnly module="market_data"><Button size="sm" variant="outline" onClick={() => void testCapture()} disabled={working !== null}>{working === "test" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-1.5 h-4 w-4" />}测试周榜抓取（不导入）</Button></EditOnly>
+          <EditOnly module="market_data"><Button size="sm" onClick={() => void sync("day")} disabled={working !== null}>{working === "day" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-1.5 h-4 w-4" />}同步短剧日榜 · 前50</Button></EditOnly>
+          <EditOnly module="market_data"><Button size="sm" onClick={() => void sync("week")} disabled={working !== null}>{working === "week" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-1.5 h-4 w-4" />}同步短剧周榜 · 前300</Button></EditOnly>
+          <EditOnly module="market_data"><Button size="sm" onClick={() => void sync("month")} disabled={working !== null}>{working === "month" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-1.5 h-4 w-4" />}同步短剧月榜 · 前500</Button></EditOnly>
         </div>
       </div>
-      <div className="mt-4 border-t border-[#dbe7d2] pt-4">
+      <EditOnly module="market_data">      <div className="mt-4 border-t border-[#dbe7d2] pt-4">
         <p className="text-sm font-semibold text-[#173f31]">指定月份补采</p>
         <p className="mt-1 text-xs leading-5 text-[#60766a]">先选自然月，再分别抓取三类榜单。每次导入前会校验 ADX 页面统计期；平台榜必须能拆分并验证12个平台，否则整批不导入。</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <label className="text-xs font-medium text-[#456052]">目标月份 <input aria-label="ADX目标月份" type="month" value={targetMonth} onChange={(event) => setTargetMonth(event.target.value)} className="ml-2 h-9 rounded-lg border border-[#c8d9bc] bg-white px-3 text-sm text-[#173f31]" /></label>
-          <Button size="sm" onClick={() => void syncAugustBoard("short-drama")} disabled={working !== null || !targetMonth}>{working === "short-drama" ? "抓取中…" : "抓取短剧排行榜 · Top500"}</Button>
-          <Button size="sm" onClick={() => void syncAugustBoard("tiktok-hot")} disabled={working !== null || !targetMonth}>{working === "tiktok-hot" ? "抓取中…" : "抓取 TikTok 热播榜 · Top500"}</Button>
-          <Button size="sm" onClick={() => void syncAugustBoard("platform")} disabled={working !== null || !targetMonth}>{working === "platform" ? "抓取中…" : "抓取 12 个平台榜 · 各Top500"}</Button>
+          <EditOnly module="market_data"><Button size="sm" onClick={() => void syncAugustBoard("short-drama")} disabled={working !== null || !targetMonth}>{working === "short-drama" ? "抓取中…" : "抓取短剧排行榜 · Top500"}</Button></EditOnly>
+          <EditOnly module="market_data"><Button size="sm" onClick={() => void syncAugustBoard("tiktok-hot")} disabled={working !== null || !targetMonth}>{working === "tiktok-hot" ? "抓取中…" : "抓取 TikTok 热播榜 · Top500"}</Button></EditOnly>
+          <EditOnly module="market_data"><Button size="sm" onClick={() => void syncAugustBoard("platform")} disabled={working !== null || !targetMonth}>{working === "platform" ? "抓取中…" : "抓取 12 个平台榜 · 各Top500"}</Button></EditOnly>
         </div>
       </div>
+</EditOnly>
       <details className="mt-3 border-t border-[#dbe7d2] pt-3">
         <summary className="cursor-pointer text-xs text-[#60766a]">定时同步设置与运行记录</summary>
         <div className="mt-3 rounded-xl border border-[#dbe7d2] bg-white p-3">
@@ -2408,24 +2414,24 @@ function ADXCaptureGuide({ onImported }: { onImported: (message: string, period:
               {!status.authenticated && !schedule.enabled && <p className="mt-1 text-xs text-amber-700">启用前请打开 ADX 专用窗口并确认当前登录有效。</p>}
               {schedule.nextRuns.length > 0 && <p className="mt-1 text-xs text-[#60766a]">{schedule.nextRuns.join(" · ")}</p>}
             </div>
-            <Button size="sm" variant={schedule.enabled ? "outline" : "default"} onClick={() => void updateSchedule(!schedule.enabled)} disabled={working !== null || (!schedule.enabled && (!rulesConfirmed || !status.authenticated))}>
+            <EditOnly module="market_data"><Button size="sm" variant={schedule.enabled ? "outline" : "default"} onClick={() => void updateSchedule(!schedule.enabled)} disabled={working !== null || (!schedule.enabled && (!rulesConfirmed || !status.authenticated))}>
               {working === "schedule" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}{schedule.enabled ? "暂停定时任务" : "启用本机定时任务"}
-            </Button>
+            </Button></EditOnly>
           </div>
-          {!schedule.enabled && <label className="mt-3 flex items-start gap-2 text-xs leading-5 text-[#52685d]">
+          {!schedule.enabled && <EditOnly module="market_data"><label className="mt-3 flex items-start gap-2 text-xs leading-5 text-[#52685d]">
             <input type="checkbox" className="mt-1 accent-[#315f4a]" checked={rulesConfirmed} onChange={(event) => setRulesConfirmed(event.target.checked)} />
             <span>我已核对适用于本账号的 ADX 规则，并确认允许按上述频率通过登录会话同步榜单。若尚未确认，请保持定时任务关闭。</span>
-          </label>}
+          </label></EditOnly>}
           {schedule.recentRuns.length > 0 && <div className="mt-3 space-y-1 border-t border-[#e4ecdf] pt-2">
             <p className="text-xs font-semibold text-[#456052]">最近运行记录</p>
             {schedule.recentRuns.slice(0, 8).map((run) => <p key={run.id} className="text-xs leading-5 text-[#60766a]">{new Date(run.attemptedAt).toLocaleString("zh-CN")} · {run.platform ? `${run.platform}平台榜` : run.boardType === "tiktok-hot" ? "TK热播榜" : run.boardType === "short-drama" ? "短剧榜" : run.rankType === "day" ? "日榜" : run.rankType === "week" ? "周榜" : "月榜"} · {run.rankType === "day" ? "日" : run.rankType === "week" ? "周" : "月"} {run.period} · {run.status === "success" ? `成功 ${run.rows ?? 0} 条` : run.status === "skipped" ? "跳过" : `失败：${run.message}`}</p>)}
           </div>}
         </div>
       </details>
-      <details className="mt-2 border-t border-[#dbe7d2] pt-3">
+      <EditOnly module="market_data"><details className="mt-2 border-t border-[#dbe7d2] pt-3">
         <summary className="cursor-pointer text-xs text-[#60766a]">备用：页面书签采集（当前页前50条）</summary>
         <div className="mt-3"><a ref={bookmarkRef} href="#" draggable className="inline-flex h-9 cursor-grab items-center rounded-lg border bg-white px-4 text-sm font-semibold text-[#173f31] shadow-sm">拖到书签栏：同步到云霞</a></div>
-      </details>
+      </details></EditOnly>
     </section>
   );
 }
@@ -2622,7 +2628,7 @@ function ExternalSignalsPanel({ signals, source, uploading, fileRef, onSourceCha
   return (
     <section aria-labelledby="external-signals-title" className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="section-kicker">External evidence layer</p><h3 id="external-signals-title" className="mt-1 text-lg font-semibold">外部市场信号</h3><p className="mt-1 text-xs text-muted-foreground">用于验证ADX发现的题材与作品机会；来源口径不同，仅分开展示，不与ADX指标合并计算。</p></div><Badge variant="outline">旁证层 · 不混算</Badge></div>
-      <Card><CardContent className="flex flex-wrap items-end gap-3 p-4"><label className="grid gap-1.5"><span className="text-xs font-medium text-muted-foreground">信号来源</span><select value={source} onChange={(event) => onSourceChange(event.target.value)} className="h-9 min-w-48 rounded-lg border bg-background px-3 text-sm">{sources.map((item) => <option key={item}>{item}</option>)}</select></label><input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={onImport} /><Button size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>{uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Upload className="mr-1.5 h-4 w-4" />}{uploading ? "导入中" : "导入外部信号"}</Button><Button size="sm" variant="outline" onClick={onDownloadTemplate}><FileDown className="mr-1.5 h-4 w-4" />下载模板</Button><p className="min-w-[260px] flex-1 text-xs leading-5 text-muted-foreground">标准字段：话题或作品、指标、数值、环比变化、证据链接、备注。建议在备注中记录地区、采集日期和具体口径。</p></CardContent></Card>
+      <Card><CardContent className="flex flex-wrap items-end gap-3 p-4"><label className="grid gap-1.5"><span className="text-xs font-medium text-muted-foreground">信号来源</span><select value={source} onChange={(event) => onSourceChange(event.target.value)} className="h-9 min-w-48 rounded-lg border bg-background px-3 text-sm">{sources.map((item) => <option key={item}>{item}</option>)}</select></label><input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={onImport} /><EditOnly module="market_data"><Button size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>{uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Upload className="mr-1.5 h-4 w-4" />}{uploading ? "导入中" : "导入外部信号"}</Button></EditOnly><Button size="sm" variant="outline" onClick={onDownloadTemplate}><FileDown className="mr-1.5 h-4 w-4" />下载模板</Button><p className="min-w-[260px] flex-1 text-xs leading-5 text-muted-foreground">标准字段：话题或作品、指标、数值、环比变化、证据链接、备注。建议在备注中记录地区、采集日期和具体口径。</p></CardContent></Card>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{sources.map((item) => <Card key={item}><CardContent className="p-4"><div className="flex items-center justify-between"><p className="text-sm font-semibold">{item}</p><Badge variant={counts.get(item) ? "secondary" : "outline"}>{counts.get(item) || 0}</Badge></div><p className="mt-2 text-xs text-muted-foreground">{counts.get(item) ? "本期已有旁证记录" : "本期尚未导入"}</p></CardContent></Card>)}</div>
       <Card><CardHeader><CardTitle className="text-base">本期外部证据记录</CardTitle></CardHeader><CardContent>{signals.length ? <div className="overflow-x-auto"><table className="min-w-[820px] w-full text-left text-sm"><thead><tr className="border-b text-xs text-muted-foreground"><th className="pb-3 font-medium">来源</th><th className="pb-3 font-medium">话题或作品</th><th className="pb-3 font-medium">指标</th><th className="pb-3 text-right font-medium">数值</th><th className="pb-3 text-right font-medium">变化</th><th className="pb-3 pl-4 font-medium">证据</th></tr></thead><tbody>{signals.map((item) => <tr key={item.id} className="border-b last:border-0"><td className="py-3"><Badge variant="outline">{item.source}</Badge></td><td className="max-w-[220px] truncate py-3 font-medium">{item.topic}</td><td className="py-3 text-muted-foreground">{item.metric}</td><td className="py-3 text-right">{item.value === null ? "—" : short(item.value)}</td><td className="py-3 text-right">{item.change || "—"}</td><td className="max-w-[280px] py-3 pl-4 text-xs text-muted-foreground">{/^https?:\/\//i.test(item.url) ? <a href={item.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">查看来源</a> : item.note || "未附链接"}</td></tr>)}</tbody></table></div> : <Empty message="本期还没有外部信号。下载模板整理证据后导入，或后续接入正式API。" />}</CardContent></Card>
     </section>
@@ -2772,7 +2778,7 @@ function DataOperations({
                       <Badge variant="secondary">已映射</Badge>
                     ) : (
                       <div className="flex flex-wrap items-center justify-end gap-1.5">
-                        <select
+                        <EditOnly module="market_data"><select
                           aria-label={`将${item.name}映射到核心平台`}
                           value={platformTargets[item.name] || ""}
                           onChange={(event) =>
@@ -2789,8 +2795,8 @@ function DataOperations({
                               {platform}
                             </option>
                           ))}
-                        </select>
-                        <Button
+                        </select></EditOnly>
+                        <EditOnly module="market_data"><Button
                           size="sm"
                           variant="outline"
                           disabled={!platformTargets[item.name]}
@@ -2802,7 +2808,7 @@ function DataOperations({
                           }
                         >
                           确认
-                        </Button>
+                        </Button></EditOnly>
                       </div>
                     )}
                   </div>
@@ -2848,7 +2854,7 @@ function DataOperations({
                     </Badge>
                   </div>
                   <div className="mt-2 flex gap-2">
-                    <Input
+                    <EditOnly module="market_data"><Input
                       value={titleTargets[work.title] || ""}
                       onChange={(event) =>
                         setTitleTargets((current) => ({
@@ -2858,8 +2864,8 @@ function DataOperations({
                       }
                       placeholder="填写另一来源中的标准剧名"
                       className="h-8 text-xs"
-                    />
-                    <Button
+                    /></EditOnly>
+                    <EditOnly module="market_data"><Button
                       size="sm"
                       variant="outline"
                       disabled={!titleTargets[work.title]?.trim()}
@@ -2871,7 +2877,7 @@ function DataOperations({
                       }
                     >
                       确认别名
-                    </Button>
+                    </Button></EditOnly>
                   </div>
                 </div>
               ))
@@ -2887,7 +2893,7 @@ function DataOperations({
           <Badge variant="outline">已保存 {Object.keys(genreAliasMap).length} 条映射</Badge>
         </CardHeader>
         <CardContent className="grid gap-2 md:grid-cols-2">
-          {genreCandidates.length ? genreCandidates.map((item) => <div key={item.name} className="flex flex-wrap items-center gap-2 rounded-xl border p-3"><div className="min-w-[120px] flex-1"><p className="text-sm font-medium">{item.name}</p><p className="text-[11px] text-muted-foreground">出现 {item.value.toLocaleString()} 次</p></div><select aria-label={`将题材${item.name}归一为`} value={genreTargets[item.name] || ""} onChange={(event) => setGenreTargets((current) => ({ ...current, [item.name]: event.target.value }))} className="h-8 rounded-lg border bg-background px-2 text-xs"><option value="">选择标准题材</option>{STANDARD_GENRES.map((genre) => <option key={genre} value={genre}>{genre}</option>)}</select><Button size="sm" variant="outline" disabled={!genreTargets[item.name]} onClick={() => onSaveGenreAlias(item.name, genreTargets[item.name])}>确认</Button></div>) : <div className="md:col-span-2"><Empty message="当前头部题材均已属于标准词典；后续导入的新标签仍会自动进入待确认队列。" /></div>}
+          {genreCandidates.length ? genreCandidates.map((item) => <div key={item.name} className="flex flex-wrap items-center gap-2 rounded-xl border p-3"><div className="min-w-[120px] flex-1"><p className="text-sm font-medium">{item.name}</p><p className="text-[11px] text-muted-foreground">出现 {item.value.toLocaleString()} 次</p></div><EditOnly module="market_data"><select aria-label={`将题材${item.name}归一为`} value={genreTargets[item.name] || ""} onChange={(event) => setGenreTargets((current) => ({ ...current, [item.name]: event.target.value }))} className="h-8 rounded-lg border bg-background px-2 text-xs"><option value="">选择标准题材</option>{STANDARD_GENRES.map((genre) => <option key={genre} value={genre}>{genre}</option>)}</select></EditOnly><EditOnly module="market_data"><Button size="sm" variant="outline" disabled={!genreTargets[item.name]} onClick={() => onSaveGenreAlias(item.name, genreTargets[item.name])}>确认</Button></EditOnly></div>) : <div className="md:col-span-2"><Empty message="当前头部题材均已属于标准词典；后续导入的新标签仍会自动进入待确认队列。" /></div>}
         </CardContent>
       </Card>
       <Card className="border-dashed">
@@ -2906,9 +2912,9 @@ function DataOperations({
           >
             导出待补中文名
           </Button>
-          <Button size="sm" variant="outline" onClick={onImportNames}>
+          <EditOnly module="market_data"><Button size="sm" variant="outline" onClick={onImportNames}>
             回填中文名映射
-          </Button>
+          </Button></EditOnly>
           <Badge variant="secondary">
             已保存 {Object.keys(titleAliasMap).length} 条剧名别名
           </Badge>

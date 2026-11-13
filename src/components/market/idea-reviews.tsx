@@ -1,6 +1,7 @@
 "use client"
 import {useCallback,useEffect,useState} from 'react'
 import {notifyValidationChanges,watchValidationChanges} from '@/lib/market/validation-events'
+import {useModuleEdit} from "@/components/permissions/workspace-permissions"
 import {Button} from '@/components/ui/button'
 import {marketJson} from './report-library'
 import {MonthlyReviewDetails} from './monthly-review'
@@ -47,8 +48,8 @@ export function IdeaReviewPanel({ideaId}:{ideaId:string}){
  return <section aria-label="月度研判与后续验证" className="space-y-3"><h4 className="font-semibold">月度研判与后续验证</h4><p className="text-xs">查看已关联的具体建议、原始依据和实际验证结果。新关联可从市场看板的月度研判进入。</p>{store.error&&<p role="alert" className="text-red-700">{store.error}</p>}<Button size="sm" variant="outline" disabled={store.loading} onClick={()=>void store.load()}>刷新验证进度</Button>{store.loading&&<p role="status">读取验证进度…</p>}{!store.loading&&!store.error&&!store.records.length&&<p className="text-xs">尚未关联月度研判。</p>}{store.records.map(r=><IdeaReviewCard key={r.id} record={r} canEdit={store.canEdit} onSaved={store.replace}/>)}{store.more&&<Button size="sm" disabled={store.loading} onClick={()=>void store.load(store.records.length)}>更多研判关联</Button>}</section>
 }
 export function ReviewIdeaControl({review}:{review:MonthlyReviewRecord}){
- const [open,setOpen]=useState(false)
- return <div className="mt-3"><Button size="sm" variant="outline" onClick={()=>setOpen(!open)}>{open?'收起选题关联与验证':'关联已有选题 / 查看验证进度'}</Button>{open&&<ReviewIdeaPicker review={review}/>}</div>
+ const [open,setOpen]=useState(false),canEdit=useModuleEdit("discover")
+ return <div className="mt-3"><Button size="sm" variant="outline" onClick={()=>setOpen(!open)}>{open?'收起选题关联与验证':canEdit?'关联已有选题 / 查看验证进度':'查看关联选题与验证进度'}</Button>{open&&<ReviewIdeaPicker review={review}/>}</div>
 }
 function ReviewIdeaPicker({review}:{review:MonthlyReviewRecord}){
  const store=useIdeaReviews(`reviewId=${review.id}`),[ideas,setIdeas]=useState<{id:string;title:string}[]>([]),[selected,setSelected]=useState(''),[search,setSearch]=useState(''),[reason,setReason]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('')

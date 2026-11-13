@@ -1,3 +1,4 @@
+import { WorkspacePermissionsProvider } from "@/components/permissions/workspace-permissions"
 export const dynamic = "force-dynamic"
 
 export default function AppGroupLayout({
@@ -5,5 +6,5 @@ export default function AppGroupLayout({
 }: {
   children: React.ReactNode
 }) {
-  return <>{children}</>
+  return <WorkspacePermissionsProvider>{children}</WorkspacePermissionsProvider>
 }
