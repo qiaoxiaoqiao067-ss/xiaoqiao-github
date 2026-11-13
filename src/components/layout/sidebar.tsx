@@ -78,18 +78,19 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: SidebarProps) {
   const pathname = usePathname()
-  const [allowedModules, setAllowedModules] = useState<string[] | null>(null)
+  const [allowedModules, setAllowedModules] = useState<string[] | null>([])
   const [teamRole, setTeamRole] = useState<string | null>(null)
   useEffect(() => {
     let active = true
     fetch("/api/team", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).then((data) => {
-      if (!active || !data?.configured || data.role === "owner") return
+      if (!active || !data?.configured) return
+      if(data.role === "owner"){setTeamRole("owner");setAllowedModules(null);return}
       setTeamRole(data.role || "collaborator")
       setAllowedModules(data.status === "active" ? (data.modules || []).filter((module: { canView: boolean }) => module.canView).map((module: { key: string }) => module.key) : [])
     }).catch(() => undefined)
     return () => { active = false }
   }, [])
-  const visibleNav = allowedModules === null || teamRole === "owner" ? NAV_ITEMS : NAV_ITEMS.filter((item) => item.href === "/" || (item.href === "/content" && allowedModules.includes("content")) || (item.href === "/projects" && allowedModules.includes("projects")) || (item.href === "/market-data" && allowedModules.includes("market_data")) || (item.href === "/discover" && allowedModules.includes("discover")))
+  const visibleNav = allowedModules === null || teamRole === "owner" ? NAV_ITEMS : NAV_ITEMS.filter((item) => (item.href === "/content" && allowedModules.includes("content")) || (item.href === "/projects" && allowedModules.includes("projects")) || (item.href === "/market-data" && allowedModules.includes("market_data")) || (item.href === "/discover" && allowedModules.includes("discover")))
 
   return (
     <aside
@@ -105,7 +106,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
         collapsed ? "justify-center" : "justify-between"
       )}>
         {(!collapsed || mobileOpen) && (
-          <Link href="/" className="flex items-center gap-3 font-semibold text-sidebar-foreground">
+          <Link href={visibleNav[0]?.href || "/access-denied"} className="flex items-center gap-3 font-semibold text-sidebar-foreground">
             <span className="flex h-10 w-10 items-center justify-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground"><Sparkles className="h-5 w-5" /></span>
             <span><span className="block text-sm tracking-[.16em]">云霞内容台</span><span className="block text-[10px] font-normal tracking-[.12em] text-sidebar-foreground/55">AI SHORT DRAMA</span></span>
           </Link>

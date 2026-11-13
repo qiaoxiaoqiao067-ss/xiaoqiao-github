@@ -2,6 +2,9 @@ import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 import { getUserWithNetworkRetry } from "@/lib/supabase/get-user-with-retry"
 
+import {getWorkspaceAccess,requireWorkspaceAccess} from "@/lib/supabase/workspace-access"
+import {routeAccess,SHARED_PAGES} from "@/lib/supabase/route-access"
+
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -13,34 +16,9 @@ export async function proxy(request: NextRequest) {
     return supabaseResponse
   }
 
-  const protectedPaths = [
-    "/",
-    "/todos",
-    "/reports",
-    "/docs",
-    "/content",
-    "/ai-learning",
-    "/projects",
-    "/market-data",
-    "/discover",
-    "/research",
-    "/meetings",
-    "/knowledge",
-    "/localization",
-    "/settings",
-  ]
-
-  const isProtectedRoute = protectedPaths.some(
-    (path) =>
-      request.nextUrl.pathname === path ||
-      request.nextUrl.pathname.startsWith(path + "/")
-  )
-
-  // Public auth screens and callbacks do not need a remote session check.
-  if (!isProtectedRoute) {
-    return supabaseResponse
-  }
-
+  const policy=routeAccess(request.nextUrl.pathname)
+  if(policy==='public')return supabaseResponse
+  const isApi=request.nextUrl.pathname.startsWith('/api/')
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
       getAll() {
@@ -66,18 +44,30 @@ export async function proxy(request: NextRequest) {
     const result = await getUserWithNetworkRetry(supabase, 3)
     user = result.data.user
   } catch {
+    if(isApi)return NextResponse.json({error:"认证服务暂时不可用"},{status:503})
     const url = request.nextUrl.clone()
     url.pathname = "/login"
     url.searchParams.set("next", request.nextUrl.pathname)
     return NextResponse.redirect(url)
   }
 
-  if (!user && isProtectedRoute) {
+  if (!user) {
+    if(isApi)return NextResponse.json({error:"Unauthorized"},{status:401})
     const url = request.nextUrl.clone()
     url.pathname = "/login"
     return NextResponse.redirect(url)
   }
 
+  try {
+    const access=policy==='owner'?await getWorkspaceAccess(user.id,'content'):await requireWorkspaceAccess(user.id,SHARED_PAGES[policy],'view')
+    const allowed=policy==='owner'?access?.role==='owner'&&access.ownerId===user.id:!!access
+    if(!allowed){
+      if(isApi)return NextResponse.json({error:'此功能仅工作台所有者可使用'},{status:403,headers:{'Cache-Control':'private, no-store'}})
+      let destination='/access-denied'
+      if(request.nextUrl.pathname==='/')for(const [path,key] of Object.entries(SHARED_PAGES)){if(await requireWorkspaceAccess(user.id,key,'view')){destination=path;break}}
+      const url=request.nextUrl.clone();url.pathname=destination;url.search='';return NextResponse.redirect(url)
+    }
+  } catch {return NextResponse.json({error:'权限检查暂时不可用，请重试'},{status:503})}
   return supabaseResponse
 }
 

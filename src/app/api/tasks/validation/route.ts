@@ -13,7 +13,7 @@ export async function GET(request:NextRequest){
   if(!market||!discover||market.ownerId!==discover.ownerId)return NextResponse.json({records:[],canEdit:false,unavailable:true,homeVisible:false},{headers:{'Cache-Control':'private, no-store'}})
   const homeVisible=market.ownerId===user.id&&market.role==='owner'&&discover.role==='owner'
   // Home reminders are personal to the owner. Team task permissions remain separate.
-  if(scope==='home'&&!homeVisible)return NextResponse.json({records:[],canEdit:false,unavailable:true,homeVisible:false},{headers:{'Cache-Control':'private, no-store'}})
+  if(!homeVisible)return NextResponse.json({records:[],canEdit:false,unavailable:true,homeVisible:false},{headers:{'Cache-Control':'private, no-store'}})
   return NextResponse.json({homeVisible,records:await readActiveIdeaReviews(market.ownerId),canEdit:discover.canEdit},{headers:{'Cache-Control':'private, no-store'}})
  }catch{return NextResponse.json({error:'验证任务读取失败，请重试；其他任务不受影响'},{status:503})}
 }

@@ -38,6 +38,12 @@ export async function GET() {
     const access = owned ? { workspace: owned, membership: { role: "owner", status: "active" } } : await memberWorkspace(user.id)
     if (!access) return NextResponse.json({ configured: true, role: "none", status: "pending", modules: [] })
     const { workspace, membership } = access
+    if(membership.role !== "owner") {
+      const {data: permissions,error}=await serviceClient.from("workspace_module_permissions").select("module_key,can_view,can_edit").eq("workspace_id",workspace.id).eq("user_id",user.id)
+      if(error)throw error
+      const active=membership.status==='active'
+      return NextResponse.json({configured:true,role:membership.role,status:membership.status,modules:MODULES.map(key=>{const p=permissions?.find(v=>v.module_key===key);const canView=active&&Boolean(p?.can_view);return {key,label:moduleLabel[key],canView,canEdit:canView&&membership.role==='collaborator'&&Boolean(p?.can_edit)}})},{headers:{'Cache-Control':'private, no-store'}})
+    }
     const { data: members, error: membersError } = await serviceClient.from("workspace_members").select("user_id,role,status,invited_email,created_at").eq("workspace_id", workspace.id).order("created_at", { ascending: true })
     if (membersError) throw membersError
     const userIds = (members || []).map((member) => member.user_id)
