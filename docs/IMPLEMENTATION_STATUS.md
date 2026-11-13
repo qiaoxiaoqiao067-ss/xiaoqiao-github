@@ -1,5 +1,15 @@
 # 云霞内容台实施状态
 
+## 2026-11-13 真实成员访问隔离实机验收
+
+- 状态：已完成（真实只读成员访问范围；可编辑成员保存未包含）。用户自行在独立内置浏览器登录，/api/team确认viewer、active及四模块canView=true/canEdit=false。
+- 导航仅四模块。责编277条、项目7个与40个当前排期节点、市场月度结论和题材结构、10月32条选题均实际可读。
+- 根地址自动跳转/content，无首页提醒；/todos转/access-denied。首页提醒、任务验证及todos数据代理均返回所有者专用提示，无业务记录。
+- reports、meetings、knowledge、research、settings、localization、docs、ai-learning旧地址全部实测拒绝。未模拟身份、签发凭证、改授权或业务数据。
+- 证据：/Users/xiaoqiao/Documents/Codex/outputs/real-member-access-2026-11-13/（验收记录.md、checks.json、four-modules.png、tasks-denied.png、member-market-navigation.png）。没有产品代码修改，无需重新部署。
+- 部分只读业务页仍展示上传/新建按钮，本轮未提交，不将入口可见等同于实际可写。服务端只读写入拦截已有自动测试；真实可编辑账号保存尚未实测。
+
+
 ## 2026-11-13 统一个人模块与团队权限
 
 - 状态：已完成（权限修正3ae9d87已合并main并部署，Vercel成功；本人线上检阅通过）。覆盖11月12日任务中心仍可协作的旧规则。
