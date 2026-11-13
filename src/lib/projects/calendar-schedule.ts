@@ -13,7 +13,19 @@ export type CalendarItem = {
   href: string
   time: string
   scheduleId?: string
+  projectId?: string
   department?: ScheduleDepartment
+}
+
+export type CalendarScheduleFilter = { department: ScheduleDepartment | "all"; projectId: string }
+
+export function filterCalendarItems(items: CalendarItem[], filters: CalendarScheduleFilter): CalendarItem[] {
+  if (filters.department === "all" && filters.projectId === "all") return items
+  // Tasks and meetings have no authoritative project/department association.
+  // An active schedule filter therefore shows matching project milestones only.
+  return items.filter((item) => item.type === "project"
+    && (filters.department === "all" || item.department === filters.department)
+    && (filters.projectId === "all" || item.projectId === filters.projectId))
 }
 
 function isDate(value: string) {
@@ -33,6 +45,7 @@ export function projectScheduleCalendarItems(items: ProjectTimelineItem[], proje
     return [{
       id: `schedule-${item.id}`,
       scheduleId: item.id,
+      projectId: item.project_id,
       department: scheduleDepartment(item.track),
       date: item.start_date,
       endDate: item.end_date,
