@@ -27,7 +27,6 @@ import {
 } from "lucide-react"
 import { RecurringManager } from "@/components/tasks/recurring-manager"
 import { AiTaskInbox } from "@/components/tasks/ai-task-inbox"
-import { ValidationTasksPanel } from "@/components/tasks/validation-tasks"
 import { DataError } from "@/components/ui/data-error"
 
 const PRIORITY_MAP: Record<number, { label: string; variant: "default" | "warning" | "destructive" }> = {
@@ -97,7 +96,6 @@ export default function TodosPage() {
           </CardContent></Card>
         )}
 
-        <ValidationTasksPanel />
 
         {/* Error */}
         {error && <DataError error={error} onRetry={refetch} />}

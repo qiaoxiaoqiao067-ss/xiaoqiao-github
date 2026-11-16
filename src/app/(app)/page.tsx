@@ -16,10 +16,6 @@ import { useMeetings } from "@/hooks/use-meetings"
 import { useResearchItems } from "@/hooks/use-research-items"
 import { useIdeas } from "@/hooks/use-ideas"
 import { AiTaskInbox } from "@/components/tasks/ai-task-inbox"
-import { useValidationTasks } from "@/hooks/use-validation-tasks"
-import { ValidationReminder } from "@/components/tasks/validation-tasks"
-import { validationCalendar } from "@/lib/market/validation-tasks"
-import { DailyBriefCard } from "@/components/market/daily-brief-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -70,7 +66,6 @@ export default function DashboardPage() {
   const { meetings } = useMeetings()
   const { items: researchItems } = useResearchItems()
   const { ideas } = useIdeas()
-  const validationStore = useValidationTasks("home")
   const loading = todosLoading || contentsLoading || projectsLoading
   const today = new Date()
   const todayKey = localDateKey(today)
@@ -127,7 +122,6 @@ export default function DashboardPage() {
   const monthGridStart = startOfWeekMonday(visibleMonth)
   const monthDays = Array.from({ length: 42 }, (_, index) => addDays(monthGridStart, index))
   const calendarItems: CalendarItem[] = [
-    ...(validationStore.homeVisible ? validationCalendar(validationStore.tasks) : []),
     ...activeTodos.filter((item) => item.due_date).map((item) => ({ id: `task-${item.id}`, date: item.due_date!, title: item.title, detail: item.description || item.next_action || "", type: "task" as const, href: "/todos", time: "全天" })),
     ...meetings.filter((item) => item.meeting_date).map((item) => ({ id: `meeting-${item.id}`, date: item.meeting_date!, title: item.title, detail: item.summary || "", type: "meeting" as const, href: "/meetings", time: timeLabel(item.meeting_date!) })),
     ...scheduleEvents,
@@ -171,9 +165,7 @@ export default function DashboardPage() {
           <Card className="border-[#b8d0b2] bg-[#f7faf3]"><CardContent className="flex h-full flex-col p-2.5"><button onClick={() => setAssistantOpen((value) => !value)} className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#c9f45a] text-[#102a21]"><Sparkles className="h-3.5 w-3.5" /></span><span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-[#173f31]">AI 任务助手</span><span className="block truncate text-[9px] text-[#5c7468]">说一句话，自动整理任务</span></span><ChevronDown className={`h-3.5 w-3.5 text-[#5c7468] transition-transform ${assistantOpen ? "rotate-180" : ""}`} /></button>{assistantOpen&&<div className="mt-2"><AiTaskInbox compact onApplied={() => void refetchTodos()} /></div>}<div className="mt-auto border-t border-[#d7e3d2] pt-2"><div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3"><CompactActionLink href="/content" label="上传剧本" icon={BookOpen} /><CompactActionLink href="/localization" label="字数统计" icon={Calculator} /><CompactActionLink href="/todos" label="添加任务" icon={Plus} /><CompactActionLink href="/discover" label="记录灵感" icon={Lightbulb} /><CompactActionLink href="/research" label="新建调研" icon={Radar} /></div></div></CardContent></Card>
         </section>
 
-        <ValidationReminder store={validationStore} />
 
-        <DailyBriefCard />
 
         <section aria-label="工作台日历">
           <Card className="overflow-hidden">
