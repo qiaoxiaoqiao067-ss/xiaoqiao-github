@@ -2,8 +2,9 @@
 
 import { useEffect, useId, useRef, useState, type FormEvent } from "react"
 import { Loader2, X } from "lucide-react"
-import { displayTimelineTrack, TIMELINE_STATUSES, TIMELINE_TRACKS, type ProjectTimelineItem, type TimelineInput, type TimelineStatus } from "@/hooks/use-project-timeline"
+import { TIMELINE_STATUSES, type ProjectTimelineItem, type TimelineInput, type TimelineStatus } from "@/hooks/use-project-timeline"
 import { timelineEditInput } from "@/lib/projects/timeline-edit"
+import { RESPONSIBILITY_LANES, responsibilityLane } from "@/lib/projects/responsibility-lanes"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -18,7 +19,7 @@ type Props = {
 }
 
 export function ScheduleItemEditor({ item, projectTitle, onClose, onSave, onDelete }: Props) {
-  const [draft, setDraft] = useState(() => ({ ...item, track: displayTimelineTrack(item) as string }))
+  const [draft, setDraft] = useState(() => ({ ...item, track: responsibilityLane(item) as string }))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState("")
   const dialog = useRef<HTMLDialogElement>(null)
@@ -44,7 +45,7 @@ export function ScheduleItemEditor({ item, projectTitle, onClose, onSave, onDele
       <div className="mb-4 flex items-start justify-between gap-3"><div><h2 id={`${prefix}-title`} className="text-lg font-semibold">编辑排期</h2>{projectTitle && <p className="mt-1 text-sm text-muted-foreground">{projectTitle}</p>}<p className="mt-1 text-xs text-muted-foreground">保存后同步更新首页日历与项目推进。</p></div><Button type="button" size="icon" variant="ghost" aria-label="关闭排期编辑" disabled={saving} onClick={onClose}><X className="h-4 w-4" /></Button></div>
       <fieldset disabled={saving} className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-sm sm:col-span-2"><span>节点名称</span><Input required maxLength={300} value={draft.title} onChange={(event) => update("title", event.target.value)} /></label>
-        <label className="space-y-1 text-sm"><span>部门 / 制作方式</span><select className="h-10 w-full rounded-xl border bg-card px-3 text-sm" value={draft.track} onChange={(event) => update("track", event.target.value)}>{TIMELINE_TRACKS.map((track) => <option key={track}>{track}</option>)}</select></label>
+        <label className="space-y-1 text-sm"><span>责任泳道</span><select className="h-10 w-full rounded-xl border bg-card px-3 text-sm" value={draft.track} onChange={(event) => update("track", event.target.value)}>{RESPONSIBILITY_LANES.map((track) => <option key={track}>{track}</option>)}</select></label>
         <label className="space-y-1 text-sm"><span>状态</span><select className="h-10 w-full rounded-xl border bg-card px-3 text-sm" value={draft.status} onChange={(event) => update("status", event.target.value as TimelineStatus)}>{TIMELINE_STATUSES.map((status) => <option key={status} value={status}>{STATUS[status]}</option>)}</select></label>
         <label className="space-y-1 text-sm"><span>开始日期</span><Input required type="date" value={draft.start_date} onChange={(event) => update("start_date", event.target.value)} /></label>
         <label className="space-y-1 text-sm"><span>结束日期</span><Input required type="date" min={draft.start_date} value={draft.end_date} onChange={(event) => update("end_date", event.target.value)} /></label>
