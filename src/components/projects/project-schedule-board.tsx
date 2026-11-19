@@ -12,7 +12,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { ScheduleItemEditor } from "@/components/projects/schedule-item-editor"
-import { DepartmentSchedule } from "@/components/projects/department-schedule"
 import { ScheduleHistory } from "@/components/projects/schedule-history"
 import { CURRENT_SCHEDULE_LABEL, isCurrentScheduleSource, partitionScheduleVersions, scheduleSource, withScheduleSource } from "@/lib/projects/schedule-versions"
 import { RESPONSIBILITY_LANES, RESPONSIBILITY_LANE_HELP, responsibilityLane } from "@/lib/projects/responsibility-lanes"
@@ -20,11 +19,12 @@ import { RESPONSIBILITY_LANES, RESPONSIBILITY_LANE_HELP, responsibilityLane } fr
 const STATUS_LABEL: Record<TimelineStatus, string> = { planned: "待开始", active: "进行中", completed: "已完成", delayed: "已延期", paused: "已暂停" }
 const STATUS_STYLE: Record<TimelineStatus, string> = { planned: "bg-[#cdddb3] text-[#173f31]", active: "bg-[#174b39] text-white", completed: "bg-[#86b892] text-[#123f2d]", delayed: "bg-[#c7d9a9] text-[#3d5b35]", paused: "bg-[#dce7d8] text-[#56705f]" }
 const TRACK_STYLE: Record<string, { cell: string; block: string }> = {
-  "内容开发": { cell: "bg-[#eef5e5] text-[#174b39]", block: "ring-1 ring-[#78a83c]/55" },
+  "合同中": { cell: "bg-[#f4f0df] text-[#6e5d2e]", block: "ring-1 ring-[#c3a65f]/50" },
+  "剧本开发": { cell: "bg-[#eef5e5] text-[#174b39]", block: "ring-1 ring-[#78a83c]/55" },
   "本地化": { cell: "bg-[#e8f3ec] text-[#245d45]", block: "ring-1 ring-[#65a777]/50" },
-  "制作准备": { cell: "bg-[#f4f0df] text-[#6e5d2e]", block: "ring-1 ring-[#c3a65f]/50" },
+  "制作准备（美术资产、围读）": { cell: "bg-[#edf1dc] text-[#5c642e]", block: "ring-1 ring-[#a9ad62]/50" },
   "AI制作": { cell: "bg-[#e4f2df] text-[#286443]", block: "ring-1 ring-[#5b9d65]/45" },
-  "发行上线": { cell: "bg-[#edf0f2] text-[#4b5f65]", block: "ring-1 ring-[#82979e]/45" },
+  "发行投流": { cell: "bg-[#edf0f2] text-[#4b5f65]", block: "ring-1 ring-[#82979e]/45" },
   "内容部": { cell: "bg-[#eef5e5] text-[#174b39]", block: "ring-1 ring-[#78a83c]/55" },
   "制作部（自制）": { cell: "bg-[#e4f2df] text-[#286443]", block: "ring-1 ring-[#5b9d65]/45" },
   "制作部（承制）": { cell: "bg-[#e9f1df] text-[#47704f]", block: "ring-1 ring-[#88a96c]/55" },
@@ -152,7 +152,7 @@ export function ProjectScheduleBoard({ projects, onUpdateProject, onDeleteProjec
 
   const { items, loading, error, addItem, addMany, updateItem, deleteItem, refetch } = useProjectTimeline()
   const [anchor, setAnchor] = useState(() => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), 1) })
-  const [viewMode, setViewMode] = useState<"department" | "overview" | "detail" | "history">("overview")
+  const [viewMode, setViewMode] = useState<"overview" | "detail" | "history">("overview")
   const [open, setOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -164,7 +164,7 @@ export function ProjectScheduleBoard({ projects, onUpdateProject, onDeleteProjec
   const days = useMemo(() => Array.from({ length: 84 }, (_, index) => addDays(anchor, index)), [anchor])
   const { current: currentItems, history } = useMemo(() => partitionScheduleVersions(items), [items])
   const tracks = [...RESPONSIBILITY_LANES]
-  const activeProjects = [...projects].filter((project) => project.status !== "archived").sort((a, b) => Number(b.status === "active") - Number(a.status === "active") || b.progress - a.progress)
+  const activeProjects = [...projects].filter((project) => project.status !== "archived").sort((a, b) => Number(a.project_no || 999999) - Number(b.project_no || 999999) || a.created_at.localeCompare(b.created_at))
 
   const startNewAt = (projectId: string, track: string, date: string) => {
     setForm({ ...EMPTY, project_id: projectId, track, start_date: date, end_date: date })
@@ -258,10 +258,9 @@ export function ProjectScheduleBoard({ projects, onUpdateProject, onDeleteProjec
     return <Card className="overflow-hidden">
     <CardHeader className="border-b border-border/70">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div><CardTitle className="text-xl">项目排期</CardTitle><p className="mt-1 text-sm text-muted-foreground">当前版本：{CURRENT_SCHEDULE_LABEL} · {currentItems.length} 个节点</p><p className="mt-1 text-xs text-muted-foreground">项目总览看全局，部门排期看资源冲突，项目时间轴看完整节点。三种视角共用同一份数据。</p></div>
+        <div><CardTitle className="text-xl">项目排期</CardTitle><p className="mt-1 text-sm text-muted-foreground">当前版本：{CURRENT_SCHEDULE_LABEL} · {currentItems.length} 个节点</p><p className="mt-1 text-xs text-muted-foreground">项目总览与项目时间轴共用同一份阶段和节点数据，阶段以飞书项目汇总为准。</p></div>
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant={viewMode === "overview" ? "default" : "outline"} onClick={() => setViewMode("overview")}>项目总览</Button>
-          <Button size="sm" variant={viewMode === "department" ? "default" : "outline"} onClick={() => setViewMode("department")}>部门排期</Button>
           <Button size="sm" variant={viewMode === "detail" ? "default" : "outline"} onClick={() => setViewMode("detail")}>项目时间轴</Button>
           <Button size="sm" variant={viewMode === "history" ? "default" : "outline"} onClick={() => { setViewMode("history"); setOpen(false); setImportOpen(false) }}>历史记录（{history.length}）</Button>
           <EditOnly module="projects"><Button size="sm" variant="outline" onClick={() => { setImportOpen(!importOpen); setOpen(false) }}><FileSpreadsheet className="h-4 w-4" />导入排期</Button></EditOnly>
@@ -277,7 +276,7 @@ export function ProjectScheduleBoard({ projects, onUpdateProject, onDeleteProjec
     </CardHeader>
     <CardContent className="space-y-4 p-0">
       {canEdit && (open || importOpen) && <div className="space-y-4 border-b bg-muted/25 p-5">{open && <div className="grid gap-3 lg:grid-cols-6"><select className="h-10 rounded-xl border bg-card px-3 text-sm" value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value })}><option value="">选择项目 *</option>{activeProjects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}</select><select className="h-10 rounded-xl border bg-card px-3 text-sm" value={form.track} onChange={(e) => setForm({ ...form, track: e.target.value })}>{tracks.map((track) => <option key={track}>{track}</option>)}</select><Input placeholder="节点名称 *，例如：剧本修改" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /><Input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} /><Input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} /><select className="h-10 rounded-xl border bg-card px-3 text-sm" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as TimelineStatus })}>{TIMELINE_STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABEL[status]}</option>)}</select><Textarea className="lg:col-span-6" rows={2} placeholder="排期内容：例如，完成终审意见；编剧根据修改意见完成前三集重写；发起围读会确认版本。" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} /><Textarea className="lg:col-span-5" rows={2} placeholder="备注、负责人或交付标准（可选）" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /><EditOnly module="projects"><Button disabled={saving} onClick={() => void create()}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}保存节点</Button></EditOnly></div>}{importOpen && <div className="rounded-2xl border border-dashed bg-card/70 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-semibold">导入文字或 Excel/CSV 排期表</p><p className="mt-1 text-xs text-muted-foreground">表头支持：项目、部门/轨道、节点/任务、排期内容、开始日期、结束日期、备注。项目名称须与工作台项目一致。</p></div><div className="flex flex-wrap gap-2"><EditOnly module="projects"><Button variant="outline" size="sm" onClick={() => void importLegacy()} disabled={saving}><FileSpreadsheet className="mr-1.5 h-4 w-4" />导入 10/26 历史表</Button></EditOnly><input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => void importFile(e)} /><EditOnly module="projects"><Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}><Upload className="mr-1.5 h-4 w-4" />选择排期表</Button></EditOnly></div></div><Textarea className="mt-3" rows={4} placeholder={"或粘贴文本：\n项目名｜内容部｜2026-10-12~2026-10-14｜剧本修改｜完成前三集修改，确认围读版本｜责编确认\n项目名｜制作部｜2026-10-15｜角色测试｜启动角色与场景测试"} value={paste} onChange={(e) => setPaste(e.target.value)} /><div className="mt-3 flex justify-end"><EditOnly module="projects"><Button size="sm" disabled={saving || !paste.trim()} onClick={() => void importText()}>{saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}导入文字排期</Button></EditOnly></div></div>}{message && <p className="text-sm text-primary">{message}</p>}</div>}
-      {loading ? <div className="h-72 animate-pulse bg-muted/40" /> : viewMode === "history" ? <ScheduleHistory projects={projects} entries={history} /> : viewMode === "overview" ? <ProjectPortfolioSchedule projects={activeProjects} days={days} items={currentItems} onEdit={setEditing} /> : viewMode === "department" ? <DepartmentSchedule projects={activeProjects} items={currentItems} first={ymd(new Date(anchor.getFullYear(), anchor.getMonth(), 1))} last={ymd(new Date(anchor.getFullYear(), anchor.getMonth() + 2, 0))} onEdit={setEditing} /> : <div className="overflow-x-auto"><div className="min-w-[760px]"><div className="grid border-b bg-[#174b39] text-white" style={{ gridTemplateColumns: `190px 112px repeat(${days.length}, minmax(90px,1fr))` }}><div className="sticky left-0 z-30 flex items-center border-r border-white/20 bg-[#174b39] px-4 text-sm font-semibold">项目</div><div className="sticky z-30 flex items-center border-r border-white/20 bg-[#174b39] px-3 text-sm font-semibold" style={{ left: 190 }}>责任泳道</div>{days.map((day, index) => <div key={ymd(day)} className={`border-r border-white/15 px-1 py-2 text-center text-[10px] ${monthHeaderTone(day)} ${day.getDate() === 1 ? "border-l-2 border-l-[#c9f45a]" : ""} ${day.getDay() === 0 || day.getDay() === 6 ? "brightness-110" : ""}`}><span className="block font-semibold">{dayLabel(day)}</span><span className="block text-[9px] text-white/65">{weekLabel(day)}</span>{index === 0 && <CalendarDays className="mx-auto mt-1 h-3 w-3 text-[#c9f45a]" />}</div>)}</div>{activeProjects.length ? activeProjects.flatMap((project) => { const projectItems = currentItems.filter((item) => item.project_id === project.id); return RESPONSIBILITY_LANES.map((track, rowIndex) => <TimelineRow key={`${project.id}-${track}`} project={project} track={track} isFirst={rowIndex === 0} days={days} compact={false} items={projectItems.filter((item) => responsibilityLane(item) === track)} onEdit={setEditing} onCreate={startNewAt} onRename={renameProject} onArchive={archiveProject} onDeleteProject={removeProject} />) }) : <div className="p-10 text-center text-sm text-muted-foreground">建立项目后，即可添加排期节点。</div>}</div></div>}{error && <p className="p-4 text-sm text-destructive">{error}</p>}
+      {loading ? <div className="h-72 animate-pulse bg-muted/40" /> : viewMode === "history" ? <ScheduleHistory projects={projects} entries={history} /> : viewMode === "overview" ? <ProjectPortfolioSchedule projects={activeProjects} days={days} items={currentItems} onEdit={setEditing} /> : <div className="overflow-x-auto"><div className="min-w-[760px]"><div className="grid border-b bg-[#174b39] text-white" style={{ gridTemplateColumns: `190px 112px repeat(${days.length}, minmax(90px,1fr))` }}><div className="sticky left-0 z-30 flex items-center border-r border-white/20 bg-[#174b39] px-4 text-sm font-semibold">项目</div><div className="sticky z-30 flex items-center border-r border-white/20 bg-[#174b39] px-3 text-sm font-semibold" style={{ left: 190 }}>责任泳道</div>{days.map((day, index) => <div key={ymd(day)} className={`border-r border-white/15 px-1 py-2 text-center text-[10px] ${monthHeaderTone(day)} ${day.getDate() === 1 ? "border-l-2 border-l-[#c9f45a]" : ""} ${day.getDay() === 0 || day.getDay() === 6 ? "brightness-110" : ""}`}><span className="block font-semibold">{dayLabel(day)}</span><span className="block text-[9px] text-white/65">{weekLabel(day)}</span>{index === 0 && <CalendarDays className="mx-auto mt-1 h-3 w-3 text-[#c9f45a]" />}</div>)}</div>{activeProjects.length ? activeProjects.flatMap((project) => { const projectItems = currentItems.filter((item) => item.project_id === project.id); return RESPONSIBILITY_LANES.map((track, rowIndex) => <TimelineRow key={`${project.id}-${track}`} project={project} track={track} isFirst={rowIndex === 0} days={days} compact={false} items={projectItems.filter((item) => responsibilityLane(item) === track)} onEdit={setEditing} onCreate={startNewAt} onRename={renameProject} onArchive={archiveProject} onDeleteProject={removeProject} />) }) : <div className="p-10 text-center text-sm text-muted-foreground">建立项目后，即可添加排期节点。</div>}</div></div>}{error && <p className="p-4 text-sm text-destructive">{error}</p>}
     </CardContent>
     {canEdit && editing && <ScheduleItemEditor key={editing.id} item={editing} projectTitle={projects.find((project) => project.id === editing.project_id)?.title} onClose={() => setEditing(null)} onSave={updateItem} onDelete={deleteItem} />}
   </Card>
@@ -323,9 +322,9 @@ function ProjectPortfolioSchedule({ projects, days, items, onEdit }: { projects:
         const open = expanded === project.id
         return <section key={project.id} className="border-b border-[#dce6d8]">
           <button type="button" onClick={() => setExpanded(open ? null : project.id)} className={`grid w-full grid-cols-[44px_minmax(240px,1.7fr)_120px_minmax(170px,1fr)_minmax(170px,1fr)_100px_100px_94px] items-center gap-0 px-3 py-3 text-left text-xs hover:bg-[#f2f7ed] ${open ? "bg-[#f2f7ed]" : "bg-white"}`}>
-            <span className="font-semibold text-[#648070]">{project.project_no || index + 1}</span>
+            <span className="font-semibold text-[#648070]">{projectCode(project.project_no || index + 1)}</span>
             <span className="flex min-w-0 items-center gap-2 pr-4"><span className="min-w-0 flex-1"><span className="block break-words font-semibold text-[#173f31]">{project.title}</span><span className="mt-1 block text-[10px] text-muted-foreground">创建于 {project.created_at.slice(0, 10)} · {nodes.length} 个节点</span></span>{open ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}</span>
-            <span className="font-medium text-[#315f4a]">{current ? responsibilityLane(current) : project.stage || "待排期"}</span>
+            <span className="font-medium text-[#315f4a]">{project.stage || "待排期"}</span>
             <span className="pr-3 leading-5">{current ? <>{nodeDisplayTitle(current)}<small className="block text-[10px] text-muted-foreground">{scheduleRange(current)}</small></> : "暂无节点"}</span>
             <span className="pr-3 leading-5">{next ? <>{nodeDisplayTitle(next)}<small className="block text-[10px] text-muted-foreground">{scheduleRange(next)}</small></> : "待补充"}</span>
             <span>{launch?.end_date || project.due_date?.slice(0, 10) || "待定"}</span>
@@ -354,6 +353,10 @@ function ProjectPortfolioSchedule({ projects, days, items, onEdit }: { projects:
 
 function scheduleRange(item: Pick<ProjectTimelineItem, "start_date" | "end_date">) {
   return item.start_date === item.end_date ? item.start_date.slice(5) : `${item.start_date.slice(5)}—${item.end_date.slice(5)}`
+}
+
+function projectCode(value?: number | null) {
+  return value ? `P${String(value).padStart(3, "0")}` : "待编号"
 }
 
 function ProjectOverviewRow({ project, days, items, onEdit, onCreate, onRename, onArchive, onDeleteProject }: { project: Project; days: Date[]; items: ProjectTimelineItem[]; onEdit: (item: ProjectTimelineItem) => void; onCreate: (projectId: string, track: string, date: string) => void; onRename: (project: Project) => void; onArchive: (project: Project) => void; onDeleteProject: (project: Project) => void }) {

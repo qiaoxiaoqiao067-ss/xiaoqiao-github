@@ -1,45 +1,66 @@
 "use client"
 
 import { useModuleEdit, ReadableAction, EditOnly } from "@/components/permissions/workspace-permissions"
-
 import Link from "next/link"
 import { useState } from "react"
 import type { Project } from "@/hooks/use-projects"
-import type { ProjectAsset, ContractInfo } from "@/hooks/use-project-files"
+import type { ProjectAsset } from "@/hooks/use-project-files"
 import type { ProjectTimelineItem } from "@/hooks/use-project-timeline"
 import type { Meeting } from "@/hooks/use-meetings"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
-import { CheckCircle2, Circle, FileCheck2, Calculator, Loader2, MessageSquareText, PackageCheck, Save, ScanText } from "lucide-react"
+import { CheckCircle2, Circle, Calculator, FileCheck2, MessageSquareText, PackageCheck } from "lucide-react"
+import { PROJECT_STAGES, PROJECT_STAGE_DETAILS, PROJECT_STAGE_WEIGHTS, projectStageProgress } from "@/lib/projects/stages"
+import { defaultAssetCategory } from "@/lib/projects/assets"
 
-import { PROJECT_STAGES, PROJECT_STAGE_DETAILS, projectStageProgress } from "@/lib/projects/stages"
-const MILESTONE_CATEGORY: Record<string, string> = {"采购与合同":"剧本采购合同","剧本开发":"剧本修改稿","本地化与围读":"双语稿","制作与上线":"制作材料","完成归档":"项目复盘"}
-const CONTRACT_FIELDS: Array<{key:keyof ContractInfo;label:string;placeholder:string}> = [
-  {key:"party_a",label:"甲方 / 采购方",placeholder:"合同主体"},{key:"party_b",label:"乙方 / 编剧方",placeholder:"合同主体"},{key:"amount",label:"合同金额",placeholder:"未约定可留空"},{key:"copyright_scope",label:"版权范围",placeholder:"改编权、摄制权、传播权等"},{key:"authorization_term",label:"授权期限",placeholder:"起止时间或期限"},{key:"territory",label:"授权地区",placeholder:"全球、北美等"},{key:"payment_terms",label:"付款条件（可选）",placeholder:"节点、比例、账户要求"},{key:"delivery_terms",label:"交稿条件（可选）",placeholder:"集数、版本、时间"},{key:"invoice_terms",label:"发票条件（可选）",placeholder:"无约定可留空"},{key:"effective_date",label:"生效日期",placeholder:"签署或生效时间"},
-]
+function hasFile(files: ProjectAsset[], categories: string[]) {
+  return files.some((file) => categories.includes(file.category) && file.status !== "archived")
+}
 
-function hasFile(files:ProjectAsset[],categories:string[],statuses?:ProjectAsset["status"][]){return files.some((file)=>categories.includes(file.category)&&file.status!=="archived"&&(!statuses||statuses.includes(file.status)))}
-
-export function ProjectWorkflowPanel({project,files,nodes,meetings,onUpdateFile,onExtractContract,onMilestone,onStageChange}:{project:Project;files:ProjectAsset[];nodes:ProjectTimelineItem[];meetings:Meeting[];onUpdateFile:(id:string,updates:Partial<Pick<ProjectAsset,"status"|"notes"|"stage"|"timeline_item_id"|"contract_info">>)=>Promise<ProjectAsset>;onExtractContract:(id:string)=>Promise<ProjectAsset>;onMilestone:(stage:string,category:string)=>void;onStageChange:(stage:string)=>Promise<void>}){
+export function ProjectWorkflowPanel({ project, files, nodes, meetings, onMilestone, onStageChange }: {
+  project: Project
+  files: ProjectAsset[]
+  nodes: ProjectTimelineItem[]
+  meetings: Meeting[]
+  onMilestone: (stage: string, category: string) => void
+  onStageChange: (stage: string) => Promise<void>
+}) {
   const canEdit = useModuleEdit("projects")
+  const [message, setMessage] = useState("")
+  const [changingStage, setChangingStage] = useState(false)
+  const selectStage = async (stage: string) => {
+    setChangingStage(true)
+    setMessage("")
+    try { await onStageChange(stage) }
+    catch (error) { setMessage(error instanceof Error ? error.message : "阶段保存失败") }
+    finally { setChangingStage(false) }
+  }
 
-  const contract=files.find((file)=>file.category==="剧本采购合同"&&file.status!=="archived")
-  const [contractDraft,setContractDraft]=useState<ContractInfo>(contract?.contract_info||{})
-  const [extracting,setExtracting]=useState(false);const [saving,setSaving]=useState(false);const [message,setMessage]=useState("");const [editingContract,setEditingContract]=useState(!contract?.contract_info?.reviewed)
-  const [changingStage,setChangingStage]=useState(false)
-  const selectStage=async(stage:string)=>{setChangingStage(true);setMessage("");try{await onStageChange(stage)}catch(error){setMessage(error instanceof Error?error.message:"阶段保存失败")}finally{setChangingStage(false)}}
-  const extract=async()=>{if(!contract)return;setExtracting(true);setMessage("");try{const updated=await onExtractContract(contract.id);setContractDraft(updated.contract_info||{});setMessage("合同字段已提取，请人工核对后确认。AI不会替你确认合同内容。") }catch(error){setMessage(error instanceof Error?error.message:"合同识别失败")}finally{setExtracting(false)}}
-  const save=async(reviewed:boolean)=>{if(!contract)return;setSaving(true);setMessage("");try{await onUpdateFile(contract.id,{contract_info:{...contractDraft,reviewed}});setMessage(reviewed?"合同信息已人工确认。":"合同信息草稿已保存。") }catch(error){setMessage(error instanceof Error?error.message:"合同信息保存失败")}finally{setSaving(false)}}
   return <div className="space-y-4">
-    <Card><CardHeader className="pb-3"><CardTitle className="text-base">项目阶段 · {project.progress}%</CardTitle><p className="text-xs text-muted-foreground">{canEdit ? "选择当前阶段即可保存，进度每阶段20%。这是阶段进度，不是实际工作量完成率。" : "当前项目阶段与进度，仅供查看。"}</p></CardHeader><CardContent><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">{PROJECT_STAGES.map((stage,index)=>{const current=stage===project.stage;const done=index<PROJECT_STAGES.indexOf(project.stage as typeof PROJECT_STAGES[number])||project.stage==="完成归档";return <div key={stage} className={`rounded-xl border p-3 text-white ${current?"border-[#c9f45a] bg-[#174c39] ring-2 ring-[#c9f45a]":"border-[#3c725d] bg-[#245b46]"}`}><ReadableAction module="projects" type="button" disabled={changingStage} aria-pressed={current} onClick={()=>void selectStage(stage)} className="w-full text-left disabled:opacity-60"><div className="flex items-start gap-2">{done?<CheckCircle2 className="h-4 w-4 shrink-0 text-[#c9f45a]"/>:<Circle className="h-4 w-4 shrink-0"/>}<p className="text-xs font-semibold">{stage}</p></div><p className="mt-2 text-lg font-semibold text-[#c9f45a]">{projectStageProgress(stage)}%</p><p className="mt-1 min-h-9 text-[10px] text-white/80">{PROJECT_STAGE_DETAILS[stage]}</p><p className="mt-2 text-[10px]">{!canEdit ? (current ? "当前阶段" : done ? "已走过" : "未开始") : changingStage?"正在保存…":current?"当前阶段":done?"已走过 · 点击可退回":"点击设为当前阶段"}</p></ReadableAction><EditOnly module="projects"><Button type="button" size="sm" variant="ghost" className="mt-2 h-7 w-full text-[10px] text-white hover:bg-white/10 hover:text-white" onClick={()=>onMilestone(stage,MILESTONE_CATEGORY[stage])}>记录或上传资料</Button></EditOnly></div>})}</div></CardContent></Card>
-    <div className="grid gap-4 xl:grid-cols-[1.35fr_.65fr]">
-      <Card><CardHeader className="pb-3"><div className="flex flex-wrap items-center justify-between gap-2"><div><CardTitle className="text-base">合同与商务信息</CardTitle><p className="mt-1 text-[11px] text-muted-foreground">合同类型统一为剧本采购，可包含版权授权和编剧委托。</p></div>{contract&&<div className="flex gap-2"><Badge variant={contract.contract_info?.reviewed?"success":"secondary"}>{contract.contract_info?.reviewed?"已人工确认":"待人工确认"}</Badge>{contract.contract_info?.reviewed&&<EditOnly module="projects"><Button size="sm" variant="ghost" onClick={()=>setEditingContract((value)=>!value)}>{editingContract?"收起编辑":"重新编辑"}</Button></EditOnly>}<EditOnly module="projects"><Button size="sm" variant="outline" disabled={extracting} onClick={()=>void extract()}>{extracting?<Loader2 className="mr-1 h-3.5 w-3.5 animate-spin"/>:<ScanText className="mr-1 h-3.5 w-3.5"/>}提取合同字段</Button></EditOnly></div>}</div></CardHeader><CardContent>{!contract?<div className="rounded-xl border border-dashed p-5 text-center"><FileCheck2 className="mx-auto h-8 w-8 text-muted-foreground/30"/><p className="mt-3 text-sm font-semibold">尚未上传剧本采购合同</p><p className="mt-1 text-xs text-muted-foreground">{canEdit ? "点击“采购与合同”的资料入口上传合同。" : "合同资料上传后将在此展示。"}</p></div>:(!canEdit || contract.contract_info?.reviewed&&!editingContract)?<details open className="rounded-xl border bg-muted/20 p-3"><summary className="cursor-pointer text-sm font-semibold">{contract.contract_info?.reviewed ? "已确认合同信息" : "合同信息（待确认）"}</summary><div className="mt-3 grid gap-2 md:grid-cols-2">{CONTRACT_FIELDS.map((field)=><p key={field.key} className="text-xs"><span className="text-muted-foreground">{field.label}：</span>{String(contractDraft[field.key]||"未填写")}</p>)}</div></details>:<div className="space-y-3"><p className="text-xs text-muted-foreground">当前合同：{contract.file_name||contract.title} · V{contract.version}</p><div className="grid gap-3 md:grid-cols-2">{CONTRACT_FIELDS.map((field)=><label key={field.key}><span className="mb-1 block text-[11px] font-semibold text-muted-foreground">{field.label}</span><Input value={String(contractDraft[field.key]||"")} placeholder={field.placeholder} onChange={(event)=>setContractDraft({...contractDraft,[field.key]:event.target.value})}/></label>)}</div><label><span className="mb-1 block text-[11px] font-semibold text-muted-foreground">歧义与待确认项</span><Textarea rows={3} value={(contractDraft.uncertainties||[]).join("\n")} placeholder="AI识别出的歧义，或需要向法务、编剧确认的问题" onChange={(event)=>setContractDraft({...contractDraft,uncertainties:event.target.value.split("\n").map((item)=>item.trim()).filter(Boolean)})}/></label><div className="flex flex-wrap justify-end gap-2"><EditOnly module="projects"><Button size="sm" variant="outline" disabled={saving} onClick={()=>void save(false)}><Save className="mr-1 h-3.5 w-3.5"/>保存草稿</Button></EditOnly><EditOnly module="projects"><Button size="sm" disabled={saving} onClick={()=>{void save(true);setEditingContract(false)}}><CheckCircle2 className="mr-1 h-3.5 w-3.5"/>人工确认</Button></EditOnly></div></div>}{message&&<p role="status" className="mt-3 rounded-lg bg-primary/8 px-3 py-2 text-xs text-primary">{message}</p>}</CardContent></Card>
-      <Card><CardHeader className="pb-3"><CardTitle className="text-base">交付与协作</CardTitle></CardHeader><CardContent className="space-y-2"><ActionLink href={`/localization?projectId=${project.id}`} icon={Calculator} title="字数统计与报价" text="选择已有剧本版本，统计全文、台词及费用区间"/><ActionLink href="/meetings" icon={MessageSquareText} title="围读记录" text={`${meetings.filter((meeting)=>/围读/.test(meeting.meeting_type)).length} 次项目围读`}/><div className="rounded-xl border p-3"><PackageCheck className="h-4 w-4 text-primary"/><p className="mt-2 text-xs font-semibold">制作交接</p><p className="mt-1 text-[10px] text-muted-foreground">{hasFile(files,["制作交接","制作资料"])?"已有制作资料，请核对交付状态":"上传制作交接或制作资料后自动记录"}</p></div><div className="rounded-xl border p-3"><FileCheck2 className="h-4 w-4 text-primary"/><p className="mt-2 text-xs font-semibold">项目归档</p><p className="mt-1 text-[10px] text-muted-foreground">{project.status==="archived"?"项目已归档":`${nodes.length} 个排期节点 · ${files.filter((file)=>file.status!=="archived").length} 份使用中文件`}</p></div></CardContent></Card>
-    </div>
+    <Card><CardHeader className="pb-3"><CardTitle className="text-base">项目阶段 · {project.progress}%</CardTitle><p className="text-xs text-muted-foreground">{canEdit ? "选择当前阶段后自动同步总进度。合同中和发行投流各占10%，其他阶段各占20%。" : "当前项目阶段与进度，仅供查看。"}</p></CardHeader><CardContent><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">{PROJECT_STAGES.map((stage, index) => {
+      const current = stage === project.stage
+      const done = index < PROJECT_STAGES.indexOf(project.stage as typeof PROJECT_STAGES[number])
+      return <div key={stage} className={`rounded-xl border p-3 text-white ${current ? "border-[#c9f45a] bg-[#174c39] ring-2 ring-[#c9f45a]" : "border-[#3c725d] bg-[#245b46]"}`}>
+        <ReadableAction module="projects" type="button" disabled={changingStage} aria-pressed={current} onClick={() => void selectStage(stage)} className="w-full text-left disabled:opacity-60">
+          <div className="flex items-start gap-2">{done ? <CheckCircle2 className="h-4 w-4 shrink-0 text-[#c9f45a]" /> : <Circle className="h-4 w-4 shrink-0" />}<p className="text-xs font-semibold leading-4">{stage}</p></div>
+          <p className="mt-2 text-lg font-semibold text-[#c9f45a]">{projectStageProgress(stage)}%</p>
+          <p className="text-[9px] text-white/65">本阶段权重 {PROJECT_STAGE_WEIGHTS[stage]}%</p>
+          <p className="mt-1 min-h-12 text-[10px] leading-4 text-white/80">{PROJECT_STAGE_DETAILS[stage]}</p>
+          <p className="mt-2 text-[10px]">{!canEdit ? (current ? "当前阶段" : done ? "已走过" : "未开始") : changingStage ? "正在保存…" : current ? "当前阶段" : done ? "已走过 · 点击可退回" : "点击设为当前阶段"}</p>
+        </ReadableAction>
+        <EditOnly module="projects"><Button type="button" size="sm" variant="ghost" className="mt-2 h-7 w-full text-[10px] text-white hover:bg-white/10 hover:text-white" onClick={() => onMilestone(stage, defaultAssetCategory(stage))}>记录或上传资料</Button></EditOnly>
+      </div>
+    })}</div>{message && <p role="status" className="mt-3 rounded-lg bg-primary/8 px-3 py-2 text-xs text-primary">{message}</p>}</CardContent></Card>
+
+    <Card><CardHeader className="pb-3"><CardTitle className="text-base">项目工具与交付</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <ActionLink href={`/localization?projectId=${project.id}`} icon={Calculator} title="字数统计与报价" text="选择已有剧本版本，统计全文、台词及费用区间" />
+      <ActionLink href="/meetings" icon={MessageSquareText} title="围读记录" text={`${meetings.filter((meeting) => /围读/.test(meeting.meeting_type)).length} 次项目围读`} />
+      <div className="rounded-xl border p-3"><PackageCheck className="h-4 w-4 text-primary" /><p className="mt-2 text-xs font-semibold">制作资料</p><p className="mt-1 text-[10px] text-muted-foreground">{hasFile(files, ["美术资产", "制作交接", "抽卡资料", "制作材料", "分集成片"]) ? "已有制作资料，请按阶段核对" : "在对应阶段上传资料后集中查看"}</p></div>
+      <div className="rounded-xl border p-3"><FileCheck2 className="h-4 w-4 text-primary" /><p className="mt-2 text-xs font-semibold">项目档案</p><p className="mt-1 text-[10px] text-muted-foreground">{project.status === "archived" ? "项目已归档" : `${nodes.length} 个排期节点 · ${files.filter((file) => file.status !== "archived").length} 份使用中文件`}</p></div>
+    </CardContent></Card>
   </div>
 }
 
-function ActionLink({href,icon:Icon,title,text}:{href:string;icon:typeof Calculator;title:string;text:string}){return <Link href={href} className="block rounded-xl border p-3 transition hover:border-primary/40 hover:bg-primary/[.03]"><Icon className="h-4 w-4 text-primary"/><p className="mt-2 text-xs font-semibold">{title}</p><p className="mt-1 text-[10px] text-muted-foreground">{text}</p></Link>}
+function ActionLink({ href, icon: Icon, title, text }: { href: string; icon: typeof Calculator; title: string; text: string }) {
+  return <Link href={href} className="block rounded-xl border p-3 transition hover:border-primary/40 hover:bg-primary/[.03]"><Icon className="h-4 w-4 text-primary" /><p className="mt-2 text-xs font-semibold">{title}</p><p className="mt-1 text-[10px] text-muted-foreground">{text}</p></Link>
+}

@@ -1,18 +1,20 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { normalizeProjectWorkflow, projectStageProgress, PROJECT_STAGES } from "../src/lib/projects/stages"
+import { assetStage, defaultAssetCategory } from "../src/lib/projects/assets"
+import { PROJECT_STAGES, normalizeProjectStage, normalizeProjectWorkflow, projectStageProgress } from "../src/lib/projects/stages"
 
-test("five stages always produce fixed progress, including a backward selection", () => {
-  assert.deepEqual(PROJECT_STAGES.map(projectStageProgress), [20, 40, 60, 80, 100])
-  assert.equal(normalizeProjectWorkflow({ stage: "剧本开发", progress: 80 }).progress, 40)
+test("项目阶段与飞书汇总保持一致", () => {
+  assert.deepEqual(PROJECT_STAGES, ["合同中", "剧本开发", "本地化", "制作准备（美术资产、围读）", "AI制作", "发行投流"])
+  assert.deepEqual(PROJECT_STAGES.map(projectStageProgress), [10, 30, 50, 70, 90, 100])
 })
-test("old projects retain their workflow meaning instead of manual percentages", () => {
-  for (const stage of ["正式推进", "剧本修改", "剧本定稿", "前30集", "60集完本"]) {
-    assert.deepEqual(normalizeProjectWorkflow({ stage, progress: 10 }), { stage: "剧本开发", progress: 40 })
-  }
-  assert.equal(projectStageProgress("双语稿确认"), 60)
-  assert.equal(projectStageProgress("围读"), 60)
-  assert.equal(projectStageProgress("制作交接"), 80)
-  assert.equal(projectStageProgress("拟购买/合同审批"), 20)
-  assert.equal(projectStageProgress("完成归档"), 100)
+
+test("历史阶段和资料分类映射到新版阶段", () => {
+  assert.equal(normalizeProjectStage("采购与合同"), "合同中")
+  assert.equal(normalizeProjectStage("本地化与围读"), "本地化")
+  assert.equal(normalizeProjectStage("制作与上线"), "AI制作")
+  assert.equal(assetStage(null, "剧本采购合同"), "合同中")
+  assert.equal(assetStage(null, "围读材料"), "制作准备（美术资产、围读）")
+  assert.equal(defaultAssetCategory("发行投流"), "发行材料")
+  assert.deepEqual(normalizeProjectWorkflow({ stage: "剧本开发", progress: 90 }), { stage: "剧本开发", progress: 30 })
+  assert.equal(assetStage("推进中", "双语稿"), "本地化")
 })
