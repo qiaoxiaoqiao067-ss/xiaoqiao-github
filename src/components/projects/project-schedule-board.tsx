@@ -17,18 +17,25 @@ import { CURRENT_SCHEDULE_LABEL, isCurrentScheduleSource, partitionScheduleVersi
 import { RESPONSIBILITY_LANES, RESPONSIBILITY_LANE_HELP, responsibilityLane } from "@/lib/projects/responsibility-lanes"
 
 const STATUS_LABEL: Record<TimelineStatus, string> = { planned: "待开始", active: "进行中", completed: "已完成", delayed: "已延期", paused: "已暂停" }
-const STATUS_STYLE: Record<TimelineStatus, string> = { planned: "bg-[#cdddb3] text-[#173f31]", active: "bg-[#174b39] text-white", completed: "bg-[#86b892] text-[#123f2d]", delayed: "bg-[#c7d9a9] text-[#3d5b35]", paused: "bg-[#dce7d8] text-[#56705f]" }
+const STATUS_STYLE: Record<TimelineStatus, string> = {
+  planned: "bg-[#dce9d2] text-[#244b39]",
+  active: "bg-[#174b39] text-white",
+  completed: "bg-[#9fc59f] text-[#123f2d]",
+  delayed: "bg-[#c8d8ba] text-[#344f39]",
+  paused: "bg-[#e8eee4] text-[#607066]",
+}
+const UNIFIED_TRACK_STYLE = { cell: "bg-[#edf5e8] text-[#24543f]", block: "ring-1 ring-[#8cad78]/50" }
 const TRACK_STYLE: Record<string, { cell: string; block: string }> = {
-  "合同中": { cell: "bg-[#f4f0df] text-[#6e5d2e]", block: "ring-1 ring-[#c3a65f]/50" },
-  "剧本开发": { cell: "bg-[#eef5e5] text-[#174b39]", block: "ring-1 ring-[#78a83c]/55" },
-  "本地化": { cell: "bg-[#e8f3ec] text-[#245d45]", block: "ring-1 ring-[#65a777]/50" },
-  "制作准备（美术资产、围读）": { cell: "bg-[#edf1dc] text-[#5c642e]", block: "ring-1 ring-[#a9ad62]/50" },
-  "AI制作": { cell: "bg-[#e4f2df] text-[#286443]", block: "ring-1 ring-[#5b9d65]/45" },
-  "发行投流": { cell: "bg-[#edf0f2] text-[#4b5f65]", block: "ring-1 ring-[#82979e]/45" },
-  "内容部": { cell: "bg-[#eef5e5] text-[#174b39]", block: "ring-1 ring-[#78a83c]/55" },
-  "制作部（自制）": { cell: "bg-[#e4f2df] text-[#286443]", block: "ring-1 ring-[#5b9d65]/45" },
-  "制作部（承制）": { cell: "bg-[#e9f1df] text-[#47704f]", block: "ring-1 ring-[#88a96c]/55" },
-  "制作部（待确认）": { cell: "bg-[#f0f5ec] text-[#667a67]", block: "opacity-80" },
+  "合同中": UNIFIED_TRACK_STYLE,
+  "剧本开发": UNIFIED_TRACK_STYLE,
+  "本地化": UNIFIED_TRACK_STYLE,
+  "制作准备（美术资产、围读）": UNIFIED_TRACK_STYLE,
+  "AI制作": UNIFIED_TRACK_STYLE,
+  "发行投流": UNIFIED_TRACK_STYLE,
+  "内容部": UNIFIED_TRACK_STYLE,
+  "制作部（自制）": UNIFIED_TRACK_STYLE,
+  "制作部（承制）": UNIFIED_TRACK_STYLE,
+  "制作部（待确认）": UNIFIED_TRACK_STYLE,
 }
 const EMPTY = { project_id: "", track: "内容部", title: "", content: "", start_date: "", end_date: "", status: "planned" as TimelineStatus, notes: "" }
 
