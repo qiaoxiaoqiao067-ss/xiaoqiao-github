@@ -309,25 +309,25 @@ function ProjectPortfolioSchedule({ projects, days, items, onEdit }: { projects:
   const last = ymd(days[days.length - 1])
   const weeks = Array.from({ length: 12 }, (_, index) => days.slice(index * 7, index * 7 + 7))
   return <div className="overflow-x-auto">
-    <div className="min-w-[980px]">
-      <div className="grid grid-cols-[44px_minmax(240px,1.7fr)_120px_minmax(170px,1fr)_minmax(170px,1fr)_100px_100px_94px] border-b bg-[#174b39] px-3 py-2 text-[11px] font-semibold text-white">
-        <span>序号</span><span>项目</span><span>当前阶段</span><span>当前关键节点</span><span>下一节点</span><span>计划上线</span><span>总进度</span><span>风险</span>
+    <div className="min-w-[1260px]">
+      <div className="grid grid-cols-[50px_minmax(220px,1.5fr)_110px_minmax(180px,1fr)_minmax(170px,1fr)_112px_100px_90px_94px] border-b bg-[#174b39] px-3 py-2 text-[11px] font-semibold text-white">
+        <span>序号</span><span>项目</span><span>当前阶段</span><span>当前进度</span><span>下一节点</span><span>计划制作完成</span><span>计划上线</span><span>总进度</span><span>风险</span>
       </div>
       {projects.length ? projects.map((project, index) => {
         const nodes = uniqueTimelineItems(items.filter((item) => item.project_id === project.id))
         const current = portfolioCurrentNode(nodes)
         const next = portfolioNextNode(nodes, current)
-        const launch = nodes.find((node) => /上线|首发/.test(`${node.title} ${node.content || ""}`))
         const risk = projectRisk(project, nodes)
         const open = expanded === project.id
         return <section key={project.id} className="border-b border-[#dce6d8]">
-          <button type="button" onClick={() => setExpanded(open ? null : project.id)} className={`grid w-full grid-cols-[44px_minmax(240px,1.7fr)_120px_minmax(170px,1fr)_minmax(170px,1fr)_100px_100px_94px] items-center gap-0 px-3 py-3 text-left text-xs hover:bg-[#f2f7ed] ${open ? "bg-[#f2f7ed]" : "bg-white"}`}>
+          <button type="button" onClick={() => setExpanded(open ? null : project.id)} className={`grid w-full grid-cols-[50px_minmax(220px,1.5fr)_110px_minmax(180px,1fr)_minmax(170px,1fr)_112px_100px_90px_94px] items-center gap-0 px-3 py-3 text-left text-xs hover:bg-[#f2f7ed] ${open ? "bg-[#f2f7ed]" : "bg-white"}`}>
             <span className="font-semibold text-[#648070]">{projectCode(project.project_no || index + 1)}</span>
             <span className="flex min-w-0 items-center gap-2 pr-4"><span className="min-w-0 flex-1"><span className="block break-words font-semibold text-[#173f31]">{project.title}</span><span className="mt-1 block text-[10px] text-muted-foreground">创建于 {project.created_at.slice(0, 10)} · {nodes.length} 个节点</span></span>{open ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}</span>
             <span className="font-medium text-[#315f4a]">{project.stage || "待排期"}</span>
-            <span className="pr-3 leading-5">{current ? <>{nodeDisplayTitle(current)}<small className="block text-[10px] text-muted-foreground">{scheduleRange(current)}</small></> : "暂无节点"}</span>
-            <span className="pr-3 leading-5">{next ? <>{nodeDisplayTitle(next)}<small className="block text-[10px] text-muted-foreground">{scheduleRange(next)}</small></> : "待补充"}</span>
-            <span>{launch?.end_date || project.due_date?.slice(0, 10) || "待定"}</span>
+            <span className="pr-3 leading-5">{project.current_progress || (current ? nodeDisplayTitle(current) : "待补充")}</span>
+            <span className="pr-3 leading-5">{project.next_action || (next ? nodeDisplayTitle(next) : "待补充")}</span>
+            <span>{project.production_complete_date?.slice(0, 10) || "待定"}</span>
+            <span>{project.launch_date?.slice(0, 10) || "待定"}</span>
             <span><strong className="text-sm text-[#1d6a45]">{project.progress}%</strong><span className="mt-1 block h-1.5 w-16 overflow-hidden rounded-full bg-[#dfe9d9]"><span className="block h-full rounded-full bg-[#60a74f]" style={{ width: `${Math.min(100, Math.max(0, project.progress))}%` }} /></span></span>
             <span><span className={`inline-flex max-w-[88px] items-center rounded-full px-2 py-1 text-[10px] ${risk.style}`}>{risk.label !== "正常" && <AlertTriangle className="mr-1 h-3 w-3 shrink-0" />}{risk.label}</span></span>
           </button>

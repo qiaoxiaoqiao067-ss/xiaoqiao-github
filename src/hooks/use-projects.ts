@@ -8,10 +8,11 @@ export type ProjectStatus = "active" | "deferred" | "paused" | "completed" | "ar
 export type Project = {
   id: string; user_id: string; content_id: string | null; linked_idea_id: string | null; title: string; market: string | null; genre: string | null
   project_no?: number | null
-  stage: string; progress: number; status: ProjectStatus; next_action: string | null; due_date: string | null
+  stage: string; progress: number; status: ProjectStatus; current_progress: string | null; next_action: string | null; due_date: string | null
+  production_complete_date: string | null; launch_date: string | null
   risk: string | null; notes: string | null; created_at: string; updated_at: string
 }
-export type ProjectInput = Pick<Project, "title"> & Partial<Pick<Project, "market" | "genre" | "stage" | "progress" | "status" | "next_action" | "due_date" | "risk" | "notes" | "content_id" | "linked_idea_id">>
+export type ProjectInput = Pick<Project, "title"> & Partial<Pick<Project, "market" | "genre" | "stage" | "progress" | "status" | "current_progress" | "next_action" | "due_date" | "production_complete_date" | "launch_date" | "risk" | "notes" | "content_id" | "linked_idea_id">>
 const normalizeProject = (project: Project): Project => normalizeProjectWorkflow(project)
 
 export function useProjects() {

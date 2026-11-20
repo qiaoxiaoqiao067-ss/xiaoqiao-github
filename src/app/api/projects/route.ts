@@ -11,7 +11,9 @@ export const dynamic = "force-dynamic"
 const projectSchema = z.object({
   title: z.string().trim().min(1).max(300), market: z.string().max(100).nullable().optional(), genre: z.string().max(100).nullable().optional(),
   stage: z.string().max(100).optional(), progress: z.number().int().min(0).max(100).optional(), status: z.enum(["active","deferred","paused","completed","archived"]).optional(),
-  next_action: z.string().max(3000).nullable().optional(), due_date: z.string().max(30).nullable().optional(), risk: z.string().max(3000).nullable().optional(), notes: z.string().max(20000).nullable().optional(),
+  current_progress: z.string().max(3000).nullable().optional(), next_action: z.string().max(3000).nullable().optional(), due_date: z.string().max(30).nullable().optional(),
+  production_complete_date: z.string().max(30).nullable().optional(), launch_date: z.string().max(30).nullable().optional(),
+  risk: z.string().max(3000).nullable().optional(), notes: z.string().max(20000).nullable().optional(),
   content_id: z.string().uuid().nullable().optional(), linked_idea_id: z.string().uuid().nullable().optional(),
 })
 
