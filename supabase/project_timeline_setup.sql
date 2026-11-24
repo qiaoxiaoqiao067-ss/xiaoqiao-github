@@ -3,7 +3,7 @@ create table if not exists public.project_timeline_items (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users(id) on delete cascade,
   project_id uuid not null references public.projects(id) on delete cascade,
-  track text not null default '内容部' check (track in ('内容部', '制作部', '发行/运营', '其他')),
+  track text not null default '内容部' check (track in ('内容部', '制作部', '发行/运营', '其他', '合同中', '剧本开发', '本地化', '制作准备（美术资产、围读）', 'AI制作', '发行投流')),
   title text not null,
   start_date date not null,
   end_date date not null,
