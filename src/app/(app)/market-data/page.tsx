@@ -10,7 +10,8 @@ import {MonthlyReviewControl} from '@/components/market/monthly-review';
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { AppLayout } from "@/components/layout/app-layout";
-import { DailySyncStatusPanel } from "@/components/market/daily-sync-status";
+import { MarketDashboardV2 } from "@/components/market/market-dashboard-v2";
+import { DailyIntelligenceLibrary } from "@/components/market/daily-intelligence-library";
 import { MonthlyTrends } from "@/components/market/monthly-trends";
 import { WorkTracking } from "@/components/market/work-tracking";
 import { MarketEvidence } from "@/components/market/market-evidence";
@@ -74,7 +75,7 @@ type ParsedImportFile = {
   titleColumn: string;
 };
 type PendingImport = { mode: ImportMode; files: ParsedImportFile[] };
-type MarketView = "overview" | "analysis" | "data";
+type MarketView = "overview" | "analysis" | "daily" | "data";
 type AnalysisMode = "genres" | "works" | "materials" | "markets" | "trends" | "production" | "external";
 type PeriodKind = "month" | "week" | "day";
 type Work = {
@@ -158,6 +159,7 @@ function isMarketImport(item: MarketDataImport) {
     !item.source_name.startsWith("ADX同步:") &&
     !item.source_name.startsWith("市场研究:") &&
     !item.source_name.startsWith("外部信号:") &&
+    item.source_name !== "海外AI真人短剧日报" &&
     !item.source_name.startsWith(VERSION_MARKER_PREFIX)
   );
 }
@@ -580,6 +582,10 @@ function analyze(
 }
 
 export default function MarketDataPage() {
+  return <MarketDashboardV2 />;
+}
+
+export function LegacyMarketDataPage() {
   const canEdit = useModuleEdit("market_data")
   const canEditIdeas = useModuleEdit("discover")
 
@@ -598,7 +604,6 @@ export default function MarketDataPage() {
   const [activeView, setActiveView] = useState<MarketView>("overview");
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("works");
   const [importMode, setImportMode] = useState<ImportMode>("append");
-  const [uploadPeriodKind, setUploadPeriodKind] = useState<PeriodKind>("month");
   const [uploadPeriod, setUploadPeriod] = useState(() => defaultUploadPeriod("month"));
   const [uploading, setUploading] = useState(false);
   const [switchingVersion, setSwitchingVersion] = useState(false);
@@ -690,7 +695,7 @@ export default function MarketDataPage() {
           imports
             .filter(isMarketImport)
             .map((item) => item.period_label)
-            .filter((item): item is string => Boolean(item)),
+            .filter((item): item is string => typeof item === "string" && periodKindFor(item) === "month"),
         ),
       ].sort(comparePeriods),
     [imports],
@@ -732,21 +737,14 @@ export default function MarketDataPage() {
       fieldRoleMap,
     ],
   );
-  const comparablePeriods = periodOptions.filter(p => periodKindFor(p) === periodKindFor(period) && p !== period);
+  const comparablePeriods = periodOptions.filter(p => p !== period);
   const previousPeriod = comparablePeriods.includes(comparisonChoice) ? comparisonChoice : comparablePeriods.filter(p => periodNumber(p) < periodNumber(period)).sort(comparePeriods)[0] || "";
   const currentBoards = useMemo(() => boardSamples(periodImports.filter(isMarketImport), periodKindFor(period)), [periodImports, period]);
   const previousBoards = boardSamples(activeImportsForPeriod(imports, previousPeriod).filter(isMarketImport), periodKindFor(period));
   const boardComparisons = compareBoards(currentBoards, previousBoards);
   const monthlyReviews = useMonthlyReviews(periodKindFor(period)==="month"?period:"", previousPeriod);
   const marketResearch = applyMonthlyReviews(buildMarketResearch(currentBoards, boardComparisons), monthlyReviews.records, period, previousPeriod);
-  const periodGroups = useMemo(
-    () => ({
-      month: periodOptions.filter((item) => periodKindFor(item) === "month").sort(comparePeriods),
-      week: periodOptions.filter((item) => periodKindFor(item) === "week").sort(comparePeriods),
-      day: periodOptions.filter((item) => periodKindFor(item) === "day").sort(comparePeriods),
-    }),
-    [periodOptions],
-  );
+  const periodGroups = useMemo(() => ({ month: periodOptions.sort(comparePeriods) }), [periodOptions]);
   const versionOptions = useMemo(() => {
     const versionIds = [
       ...new Set(
@@ -779,14 +777,6 @@ export default function MarketDataPage() {
     });
     return [...new Set([...periodGroups.month, ...generated])].sort(comparePeriods);
   }, [periodGroups.month]);
-  const changePeriodKind = (kind: PeriodKind) => {
-    const target = periodGroups[kind][0];
-    if (target) setPeriod(target);
-  };
-  const changeUploadPeriodKind = (kind: PeriodKind) => {
-    setUploadPeriodKind(kind);
-    setUploadPeriod(defaultUploadPeriod(kind));
-  };
   const switchVersion = async (versionId: string) => {
     if (!versionId || versionId === activeVersionFor(imports, period)) return;
     setSwitchingVersion(true);
@@ -1017,7 +1007,7 @@ export default function MarketDataPage() {
         ...marketResearch.findings.map(f => ({ 项目: f.title, 内容: [f.facts.join("；"), f.review?.payload.conclusion||f.judgment, f.review?.payload.topicBrief||f.development].join("\n") })),
         { 项目: "证据缺口", 内容: marketResearch.limitations.join("\n") },
         { 项目: "研究筛选规则", 内容: marketResearch.method },
-        { 项目: "口径与风险", 内容: "每来源、每榜单日50/周300/月500；基于当前样本，不等于整个市场。广告预估曝光与TikTok播放增量分开呈现。" },
+        { 项目: "口径与风险", 内容: "仅分析完整自然月榜，每来源、每榜单Top500；基于当前样本，不等于整个市场。广告预估曝光与TikTok播放分开呈现。" },
       ],
       [18, 90],
     );
@@ -1435,9 +1425,9 @@ export default function MarketDataPage() {
     <AppLayout>
       <div className="space-y-6">
         <PageHero
-          eyebrow="ADX · 海外短剧 · 市场趋势"
-          title="市场数据看板"
-          description="日榜发现信号，周榜验证持续性，月榜形成方向判断。每个来源、每个榜单分别采样，再合并作品与证据。"
+          eyebrow="ADX月榜 · 海外AI真人短剧"
+          title="月度市场决策看板"
+          description="只使用完整自然月榜单，比较题材、作品、平台与投放变化，并结合外部日报信号形成趋势判断。"
           action={
             <div className="flex flex-wrap items-center gap-2">
               <EditOnly module="market_data"><Button size="sm" className="bg-[#c9f45a] text-[#173f31] hover:bg-[#d8ff76]" onClick={() => { setActiveView("data"); setImportExpanded(true); }}>采集 / 上传数据</Button></EditOnly>
@@ -1449,31 +1439,33 @@ export default function MarketDataPage() {
                   className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
                 >
                   <FileDown className="mr-1.5 h-4 w-4" />
-                  导出本期简报
+                  导出月度简报
                 </Button>
               )}
             </div>
           }
         />
         <MarketViewTabs activeView={activeView} onChange={setActiveView} />
-        <DailySyncStatusPanel onRefresh={refetch} onOpen={(day)=>{setPeriod(day);setComparisonChoice("");setActiveView("overview");}} />
+        {activeView === "daily" && <DailyIntelligenceLibrary />}
+        {activeView !== "daily" && <>
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#d7e4c8] bg-white p-4">
-          <div><p className="text-sm font-semibold text-[#173f31]">每来源 · 每榜单：日50 / 周300 / 月500</p><p className="mt-1 text-xs text-muted-foreground">按原榜排名先取TopN，再分析其中AI仿真人条目；不会向榜外补足AI数量。</p></div>
-          <label className="flex items-center gap-2 text-xs text-[#61766b]">统计期
+          <div><p className="text-sm font-semibold text-[#173f31]">月榜唯一统计口径 · 每榜Top500</p><p className="mt-1 text-xs text-muted-foreground">按ADX原榜排名取Top500，再识别AI仿真人条目；不以日报文字替代榜单事实。</p></div>
+          <label className="flex items-center gap-2 text-xs text-[#61766b]">分析月份
             <select aria-label="监测统计期" value={periodOptions.includes(period) ? period : ""} onChange={(event) => setPeriod(event.target.value)} className="h-9 max-w-full rounded-lg border border-[#c8d9bc] bg-white px-3 text-sm text-[#173f31]">
               <option value="" disabled>暂无已导入周期</option>
-              {periodOptions.filter(option => periodKindFor(option) === periodKindFor(period)).map(option => <option key={option} value={option}>{option}</option>)}
+              {periodOptions.map(option => <option key={option} value={option}>{option}</option>)}
             </select>
           </label>
         </div>
         <div className="rounded-2xl border border-[#d7e4c8] bg-white p-4 text-xs">
-          <label className="flex flex-wrap items-center gap-2">对比统计期
+          <label className="flex flex-wrap items-center gap-2">对比月份
             <select aria-label="对比统计期" value={previousPeriod} onChange={e=>setComparisonChoice(e.target.value)} className="max-w-full rounded-lg border border-[#c8d9bc] bg-white p-2"><option value="">暂无对比期</option>{comparablePeriods.map(p=><option key={p} value={p}>{p}</option>)}</select>
             <span>{boardComparisons.filter(c=>!c.reason).length}个榜单可独立比较 · 原始快照口径待核验</span>
             <Button size="sm" variant="ghost" onClick={()=>{setActiveView("analysis");setAnalysisMode("trends")}}>查看分榜比较</Button>
           </label>
           <details className="mt-3"><summary className="cursor-pointer font-medium text-[#315f4a]">查看采样范围与数据质量</summary><p className="mt-2 leading-6">旧版先筛AI再取TopN；现在先取原榜TopN，AI数量下降可能来自取样修正，不代表市场回落。榜单排名、播放和素材分别解释，海外榜不直接代表北美。</p>{currentBoards.map(b=><div key={b.key} className="mt-2 border-t pt-2"><p className="break-all">{b.name}：原榜{b.rows.length}条，其中AI {b.ai.length}条；指标：{b.metric||'未识别'}</p>{b.issues.map((issue,i)=><p key={i} className="mt-1 text-amber-800">{issue}</p>)}</div>)}</details>
         </div>
+        </>}
         {activeView === "data" && <>
         <section className="overflow-hidden rounded-2xl border border-[#cfe0bf] bg-gradient-to-br from-[#f7fbef] via-white to-[#eef7e7] shadow-[0_16px_40px_rgba(23,63,49,0.07)]">
           <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#dce9d2] px-5 py-4">
@@ -1483,7 +1475,7 @@ export default function MarketDataPage() {
               </div>
               <div>
                 <h2 className="font-semibold text-[#173f31]">榜单数据导入与校验</h2>
-                <p className="mt-1 text-xs leading-5 text-[#61766b]">月榜/周榜/日榜均可从此处导入；展开后配置上传与查看校验结果。</p>
+                <p className="mt-1 text-xs leading-5 text-[#61766b]">仅导入完整自然月榜；展开后选择月份、上传文件并查看校验结果。</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -1497,24 +1489,14 @@ export default function MarketDataPage() {
           {canEdit && importExpanded && <>
           <div className="grid gap-4 px-5 py-5 lg:grid-cols-[1.15fr_1fr_1fr_auto] lg:items-end">
             <div className="grid gap-2">
-              <span className="text-xs font-medium text-[#456052]">1. 选择榜单类型</span>
-              <div className="grid grid-cols-3 rounded-xl border border-[#c8d9bc] bg-white p-1" role="tablist" aria-label="上传榜单类型">
-                {(["day", "week", "month"] as PeriodKind[]).map((kind) => (
-                  <button key={kind} type="button" role="tab" aria-selected={uploadPeriodKind === kind} onClick={() => changeUploadPeriodKind(kind)} className={`rounded-lg px-4 py-2 text-sm font-medium transition ${uploadPeriodKind === kind ? "bg-[#173f31] text-white shadow-sm" : "text-[#61766b] hover:bg-[#f2f7ec]"}`}>
-                    {kind === "month" ? "月榜" : kind === "week" ? "周榜" : "日榜"}
-                  </button>
-                ))}
-              </div>
+              <span className="text-xs font-medium text-[#456052]">1. 数据口径</span>
+              <div className="flex h-11 items-center rounded-xl border border-[#c8d9bc] bg-[#173f31] px-4 text-sm font-semibold text-white">ADX月榜 · Top500</div>
             </div>
             <label className="grid gap-2">
               <span className="text-xs font-medium text-[#456052]">2. 选择上传周期</span>
-              {uploadPeriodKind === "month" ? (
-                <select value={uploadPeriod} onChange={(event) => setUploadPeriod(event.target.value)} aria-label="选择上传月份" className="h-11 rounded-xl border border-[#c8d9bc] bg-white px-3 text-sm text-[#173f31] outline-none focus:ring-2 focus:ring-[#b6dc61]">
+              <select value={uploadPeriod} onChange={(event) => setUploadPeriod(event.target.value)} aria-label="选择上传月份" className="h-11 rounded-xl border border-[#c8d9bc] bg-white px-3 text-sm text-[#173f31] outline-none focus:ring-2 focus:ring-[#b6dc61]">
                   {uploadMonthOptions.map((option) => <option key={option} value={option}>{option}</option>)}
-                </select>
-              ) : (
-                <input type={uploadPeriodKind === "week" ? "week" : "date"} value={uploadInputValue(uploadPeriod, uploadPeriodKind)} onChange={(event) => setUploadPeriod(uploadPeriodFromInput(event.target.value, uploadPeriodKind))} aria-label={uploadPeriodKind === "week" ? "选择上传周" : "选择上传日期"} className="h-11 rounded-xl border border-[#c8d9bc] bg-white px-3 text-sm text-[#173f31] outline-none focus:ring-2 focus:ring-[#b6dc61]" />
-              )}
+              </select>
             </label>
             <label className="grid gap-2">
               <span className="text-xs font-medium text-[#456052]">3. 选择导入方式</span>
@@ -1528,7 +1510,7 @@ export default function MarketDataPage() {
               <input ref={fileRef} type="file" multiple accept=".xlsx,.xls,.csv" className="hidden" onChange={(event) => void importFile(event)} />
               <EditOnly module="market_data"><Button disabled={uploading || !uploadPeriod} onClick={() => fileRef.current?.click()} title="可同时选择一个或多个文件" className="h-11 w-full bg-[#c9f45a] px-5 font-semibold text-[#102a21] shadow-sm hover:bg-[#d8ff74] lg:w-auto">
                 {uploading ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Upload className="mr-1.5 h-4 w-4" />}
-                {uploading ? "导入中" : `上传${uploadPeriodKind === "month" ? "月榜" : uploadPeriodKind === "week" ? "周榜" : "日榜"}`}
+                {uploading ? "导入中" : "上传月榜"}
               </Button></EditOnly>
             </div>
           </div>
@@ -1579,7 +1561,7 @@ export default function MarketDataPage() {
             </div>
             <div className="divide-y divide-[#edf2e9]">
               {pendingImport.files.map((item, index) => {
-                const kind = periodKindFor(item.targetPeriod);
+                const kind: PeriodKind = "month";
                 return (
                   <div key={`${item.fileName}-${index}`} className="space-y-4 px-5 py-5">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1587,14 +1569,7 @@ export default function MarketDataPage() {
                       <span className="text-[11px] text-[#708077]">可在写入前修正识别结果</span>
                     </div>
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      <label className="grid gap-1.5 text-xs text-[#61766b]">
-                        <span>周期类型</span>
-                        <select value={kind} onChange={(event) => updatePendingFile(index, (current) => ({ ...current, targetPeriod: defaultUploadPeriod(event.target.value as PeriodKind) }))} className="h-10 rounded-lg border border-[#c8d9bc] bg-white px-3 text-sm text-[#173f31]">
-                          <option value="day">日榜</option>
-                          <option value="week">周榜</option>
-                          <option value="month">月榜</option>
-                        </select>
-                      </label>
+                      <label className="grid gap-1.5 text-xs text-[#61766b]"><span>周期类型</span><span className="flex h-10 items-center rounded-lg border border-[#c8d9bc] bg-[#f5f8f0] px-3 text-sm font-medium text-[#173f31]">月榜</span></label>
                       <label className="grid gap-1.5 text-xs text-[#61766b]">
                         <span>统计周期</span>
                         <input type={kind === "month" ? "month" : kind === "week" ? "week" : "date"} value={uploadInputValue(item.targetPeriod, kind)} onChange={(event) => updatePendingFile(index, (current) => ({ ...current, targetPeriod: uploadPeriodFromInput(event.target.value, kind) }))} className="h-10 rounded-lg border border-[#c8d9bc] bg-white px-3 text-sm text-[#173f31]" aria-label={`修正${item.fileName}的统计周期`} />
@@ -1706,13 +1681,6 @@ export default function MarketDataPage() {
           </p>
         )}
 
-        <PeriodKindSwitch
-          active={periodKindFor(period)}
-          monthCount={periodGroups.month.length}
-          weekCount={periodGroups.week.length}
-          dayCount={periodGroups.day.length}
-          onChange={changePeriodKind}
-        />
         {activeView === "data" && dashboard.datasets.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[#d8e4c8] bg-[#f5f8f0] px-4 py-3 text-xs text-[#456052]">
             <Badge className="bg-[#315f4a] text-white">海外短剧数据</Badge>
@@ -2250,29 +2218,17 @@ function AuditMetric({ label, value, tone = "neutral" }: { label: string; value:
   );
 }
 
-function PeriodKindSwitch({ active, monthCount, weekCount, dayCount, onChange }: { active: PeriodKind; monthCount: number; weekCount: number; dayCount: number; onChange: (kind: PeriodKind) => void }) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-white px-4 py-3">
-      <div>
-        <p className="text-sm font-semibold">榜单周期</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">日榜观察即时变化，周榜捕捉短期趋势，月榜判断市场结构；不同周期分别比较。</p>
-      </div>
-      <div role="tablist" aria-label="榜单周期" className="flex gap-1 rounded-lg bg-muted p-1">
-        <button type="button" role="tab" aria-selected={active === "day"} disabled={!dayCount} onClick={() => onChange("day")} className={`rounded-md px-3 py-1.5 text-xs font-medium ${active === "day" ? "bg-white text-foreground shadow-sm" : "text-muted-foreground"} disabled:opacity-40`}>日榜 · {dayCount}</button>
-        <button type="button" role="tab" aria-selected={active === "week"} disabled={!weekCount} onClick={() => onChange("week")} className={`rounded-md px-3 py-1.5 text-xs font-medium ${active === "week" ? "bg-white text-foreground shadow-sm" : "text-muted-foreground"} disabled:opacity-40`}>周榜 · {weekCount}</button>
-        <button type="button" role="tab" aria-selected={active === "month"} disabled={!monthCount} onClick={() => onChange("month")} className={`rounded-md px-3 py-1.5 text-xs font-medium ${active === "month" ? "bg-white text-foreground shadow-sm" : "text-muted-foreground"} disabled:opacity-40`}>月榜 · {monthCount}</button>
-      </div>
-    </div>
-  );
-}
-
 const ADX_CAPTURE_BOOKMARKLET = `javascript:(()=>{const t=document.querySelector('table');if(!t){alert('当前页面没有找到可采集的ADX表格');return}const h=[...t.querySelectorAll('thead th')].map((x,i)=>x.innerText.trim()||('字段'+(i+1)));const rows=[...t.querySelectorAll('tbody tr')].map((tr,ri)=>Object.fromEntries([...tr.querySelectorAll('td')].map((td,i)=>[h[i]||('字段'+(i+1)),td.innerText.trim()||((i===0)?String(ri+1):'')])));const inputs=[...document.querySelectorAll('input')].map(x=>x.value).filter(Boolean);const payload={title:document.title,url:location.href,capturedAt:new Date().toISOString(),pageText:document.body.innerText.slice(0,5000),inputs,columns:h,rows};open('http://localhost:3000/market-data/adx-capture#'+encodeURIComponent(JSON.stringify(payload)),'_blank')})()`;
 
 function ADXCaptureGuide({ onImported }: { onImported: (message: string, period: string) => void }) {
   const bookmarkRef = useRef<HTMLAnchorElement>(null);
-  const [targetMonth, setTargetMonth] = useState("2026-08");
+  const [targetMonth, setTargetMonth] = useState(() => {
+    const now = new Date();
+    const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, "0")}`;
+  });
   const [status, setStatus] = useState<{ profileSaved?: boolean; profileExists?: boolean; authenticated?: boolean; lastSyncAt?: string; lastRows?: number; lastError?: string; apiError?: string }>({});
-  const [working, setWorking] = useState<"connect" | "test" | "day" | "week" | "month" | "schedule" | "short-drama" | "tiktok-hot" | "platform" | null>(null);
+  const [working, setWorking] = useState<"connect" | "test" | "month" | "schedule" | "short-drama" | "tiktok-hot" | "platform" | null>(null);
   const [error, setError] = useState("");
   const [schedule, setSchedule] = useState<{ enabled: boolean; nextRuns: string[]; recentRuns: { id: string; rankType: string; boardType?: string; platform?: string; period: string; attemptedAt: string; status: string; rows?: number; message: string }[] }>({ enabled: false, nextRuns: [], recentRuns: [] });
   const [rulesConfirmed, setRulesConfirmed] = useState(false);
@@ -2315,7 +2271,7 @@ function ADXCaptureGuide({ onImported }: { onImported: (message: string, period:
   const testCapture = async () => {
     setWorking("test"); setError("");
     try {
-      const response = await fetch("/api/market-data/adx/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rankType: "week", dryRun: true }) });
+      const response = await fetch("/api/market-data/adx/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rankType: "month", dryRun: true }) });
       const result = await response.json() as { tested?: boolean; period?: string; rowCount?: number; error?: string };
       if (!response.ok || !result.tested || !result.rowCount || !result.period) throw new Error(result.error || "ADX测试抓取未完成");
       onImported(`ADX测试抓取成功：读取 ${result.rowCount.toLocaleString()} 条，周期 ${result.period}；仅验证、不导入。`, result.period);
@@ -2323,14 +2279,13 @@ function ADXCaptureGuide({ onImported }: { onImported: (message: string, period:
     } catch (caught) { setError(caught instanceof Error ? caught.message : "ADX测试抓取失败"); }
     finally { setWorking(null); }
   };
-  const sync = async (rankType: PeriodKind) => {
-    setWorking(rankType); setError("");
+  const sync = async () => {
+    setWorking("month"); setError("");
     try {
-      const response = await fetch("/api/market-data/adx/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rankType }) });
+      const response = await fetch("/api/market-data/adx/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rankType: "month" }) });
       const result = await response.json() as { imported?: boolean; period?: string; rowCount?: number; error?: string };
       if (!response.ok || !result.imported || !result.rowCount || !result.period) throw new Error(result.error || "ADX没有返回有效数据或工作台没有确认写入");
-      const rankLabel = rankType === "day" ? "日榜" : rankType === "month" ? "月榜" : "周榜";
-      onImported(`ADX ${rankLabel}已抓取并写入工作台：${result.rowCount.toLocaleString()} 条，统计期 ${result.period}。`, result.period);
+      onImported(`ADX 月榜已抓取并写入工作台：${result.rowCount.toLocaleString()} 条，统计期 ${result.period}。`, result.period);
       await refreshStatus();
       await refreshStatus();
     } catch (caught) { setError(caught instanceof Error ? caught.message : "ADX同步失败"); }
@@ -2379,7 +2334,7 @@ function ADXCaptureGuide({ onImported }: { onImported: (message: string, period:
             <p className="text-sm font-semibold text-[#173f31]">ADX 本地自动同步</p>
             {status.authenticated ? <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100"><CircleCheck className="mr-1 h-3.5 w-3.5" />ADX登录已验证</Badge> : <Badge variant="outline"><CircleOff className="mr-1 h-3.5 w-3.5" />{status.profileExists ? "本地会话待验证" : "尚未连接"}</Badge>}
           </div>
-          <p className="mt-1 text-xs leading-5 text-[#60766a]">工作台使用独立的本机 ADX 浏览器资料，不会继承普通 Chrome 标签页的登录。请先在“连接ADX账号”打开的专用窗口登录；不保存账号密码。日榜前50、周榜前300、月榜前500通过校验后由服务端直接写入当前工作台账号。</p>
+          <p className="mt-1 text-xs leading-5 text-[#60766a]">工作台使用独立的本机 ADX 浏览器资料，不会继承普通 Chrome 标签页的登录。请先在“连接ADX账号”打开的专用窗口登录；不保存账号密码。仅采集完整自然月榜，Top500通过校验后由服务端写入当前工作台账号。</p>
           {status.lastSyncAt && <p className="mt-1 text-xs text-[#60766a]">最近同步：{new Date(status.lastSyncAt).toLocaleString("zh-CN")} · {status.lastRows?.toLocaleString()} 条</p>}
           {status.apiError && <p className="mt-1 text-xs text-amber-700">{status.apiError}</p>}
           {status.lastError && <p className="mt-1 text-xs text-amber-700">{status.lastError}</p>}
@@ -2387,10 +2342,8 @@ function ADXCaptureGuide({ onImported }: { onImported: (message: string, period:
         </div>
         <div className="flex flex-wrap gap-2">
           <EditOnly module="market_data"><Button size="sm" variant="outline" onClick={() => void connect()} disabled={working !== null}>{working === "connect" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Database className="mr-1.5 h-4 w-4" />}{status.profileExists ? "打开ADX专用会话" : "连接ADX账号"}</Button></EditOnly>
-          <EditOnly module="market_data"><Button size="sm" variant="outline" onClick={() => void testCapture()} disabled={working !== null}>{working === "test" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-1.5 h-4 w-4" />}测试周榜抓取（不导入）</Button></EditOnly>
-          <EditOnly module="market_data"><Button size="sm" onClick={() => void sync("day")} disabled={working !== null}>{working === "day" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-1.5 h-4 w-4" />}同步短剧日榜 · 前50</Button></EditOnly>
-          <EditOnly module="market_data"><Button size="sm" onClick={() => void sync("week")} disabled={working !== null}>{working === "week" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-1.5 h-4 w-4" />}同步短剧周榜 · 前300</Button></EditOnly>
-          <EditOnly module="market_data"><Button size="sm" onClick={() => void sync("month")} disabled={working !== null}>{working === "month" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-1.5 h-4 w-4" />}同步短剧月榜 · 前500</Button></EditOnly>
+          <EditOnly module="market_data"><Button size="sm" variant="outline" onClick={() => void testCapture()} disabled={working !== null}>{working === "test" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-1.5 h-4 w-4" />}测试月榜抓取（不导入）</Button></EditOnly>
+          <EditOnly module="market_data"><Button size="sm" onClick={() => void sync()} disabled={working !== null}>{working === "month" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CloudDownload className="mr-1.5 h-4 w-4" />}同步短剧月榜 · 前500</Button></EditOnly>
         </div>
       </div>
       <EditOnly module="market_data">      <div className="mt-4 border-t border-[#dbe7d2] pt-4">
@@ -2410,7 +2363,7 @@ function ADXCaptureGuide({ onImported }: { onImported: (message: string, period:
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-[#173f31]">{schedule.enabled ? "本机定时同步已启用" : "本机定时同步已暂停"}</p>
-              <p className="mt-1 text-xs leading-5 text-[#60766a]">日榜每天 11:30，17:30 补采；周榜周二 11:30，周三补采；月榜每月 3 日 11:30，4 日补采。采集上一完整周期，仅最近一期漏采会补跑。Mac 需登录且唤醒；工作台页面无需打开。</p>
+              <p className="mt-1 text-xs leading-5 text-[#60766a]">仅同步月榜：每月3日11:30采集上一完整自然月，4日11:30失败补采。Mac需登录且唤醒；工作台页面无需打开。</p>
               {!status.authenticated && !schedule.enabled && <p className="mt-1 text-xs text-amber-700">启用前请打开 ADX 专用窗口并确认当前登录有效。</p>}
               {schedule.nextRuns.length > 0 && <p className="mt-1 text-xs text-[#60766a]">{schedule.nextRuns.join(" · ")}</p>}
             </div>
@@ -2454,8 +2407,13 @@ function MarketViewTabs({
     },
     {
       value: "analysis",
-      label: "榜单与趋势",
-      description: "题材、作品、素材、平台与趋势",
+      label: "跨月分析",
+      description: "环比、连续趋势与预测",
+    },
+    {
+      value: "daily",
+      label: "海外日报",
+      description: "每日外部情报与判断档案",
     },
     {
       value: "data",
@@ -2466,7 +2424,7 @@ function MarketViewTabs({
   return (
     <nav
       aria-label="市场数据看板视图"
-      className="grid gap-2 rounded-2xl border border-[#d7e4c8] bg-[#f7f9f3] p-2 sm:grid-cols-3"
+      className="grid gap-2 rounded-2xl border border-[#d7e4c8] bg-[#f7f9f3] p-2 sm:grid-cols-4"
     >
       {views.map((view) => {
         const selected = activeView === view.value;
@@ -3005,19 +2963,17 @@ function WorkDetail({ work, onClose }: { work: Work; onClose: () => void }) {
   );
 }
 function TrendReadiness({ periods }: { periods: string[] }) {
-  const days = periods.filter((item) => periodKindFor(item) === "day");
   const months = periods.filter((item) => periodKindFor(item) === "month");
-  const weeks = periods.filter((item) => periodKindFor(item) === "week");
   return (
     <div className="rounded-xl border border-dashed p-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs font-semibold">连续周期趋势准备度</p>
-        <div className="flex gap-1"><Badge variant="outline">日榜 {days.length}</Badge><Badge variant="outline">周榜 {weeks.length}</Badge><Badge variant="outline">月榜 {months.length}</Badge></div>
+        <div className="flex gap-1"><Badge variant="outline">有效月榜 {months.length}</Badge></div>
       </div>
       <p className="mt-2 text-xs leading-5 text-muted-foreground">
-        {months.length >= 3 || weeks.length >= 3
-          ? "至少一种榜单周期已达到短期趋势门槛；周榜与月榜将分别计算连续上榜、排名升降和题材动量。"
-          : "周榜和月榜分别累计；任一类型达到3个连续周期后，才标记为短期趋势。"}
+        {months.length >= 3
+          ? "已达到趋势判断门槛，将基于连续月榜计算上榜稳定性、排名升降和题材动量。"
+          : "累计至少3个连续完整月榜后，才标记为趋势；不足时仅陈述当月事实。"}
       </p>
     </div>
   );

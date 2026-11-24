@@ -61,8 +61,8 @@ export async function getAdxScheduleStatus(userId: string) {
   return {
     enabled: owned && config.enabled,
     rulesConfirmed: owned && Boolean(config.rulesConfirmedAt),
-    nextRuns: owned && config.enabled ? ["每天 11:30 日榜", "每天 17:30 日榜补采", "每周二 11:30 周榜", "每周三 11:30 周榜补采", "每月 3 日 11:30 月榜", "每月 4 日 11:30 月榜补采"] : [],
-    recentRuns: runs.slice(0, 20),
+    nextRuns: owned && config.enabled ? ["每月 3 日 11:30 月榜", "每月 4 日 11:30 月榜补采"] : [],
+    recentRuns: runs.filter((run) => run.rankType === "month").slice(0, 20),
   }
 }
 
@@ -74,11 +74,8 @@ function launchAgentContents(projectRoot: string) {
   const tsxCli = path.join(projectRoot, "node_modules", "tsx", "dist", "cli.mjs")
   const runner = path.join(projectRoot, "scripts", "adx-scheduler.ts")
   const output = path.join(projectRoot, ".local", "adx-scheduler-launchd.log")
-  const intervals = [
-    { Hour: 11, Minute: 30 },
-    { Hour: 17, Minute: 30 },
-  ]
-  const intervalXml = intervals.map((interval) => `      <dict><key>Hour</key><integer>${interval.Hour}</integer><key>Minute</key><integer>${interval.Minute}</integer></dict>`).join("\n")
+  const intervals = [{ Day: 3, Hour: 11, Minute: 30 }, { Day: 4, Hour: 11, Minute: 30 }]
+  const intervalXml = intervals.map((interval) => `      <dict><key>Day</key><integer>${interval.Day}</integer><key>Hour</key><integer>${interval.Hour}</integer><key>Minute</key><integer>${interval.Minute}</integer></dict>`).join("\n")
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -192,23 +189,13 @@ function scheduledAtForPeriod(rankType: AdxRankType, period: string) {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 3, 30)
 }
 export function getScheduledAdxRankTypes(now: Date, runs: AdxScheduleRun[] = [], enabledAt?: string): AdxRankType[] {
-  const { year, month, day, hour, minute } = shanghaiParts(now)
-  const weekday = utcCalendarDate(year, month, day).getUTCDay()
+  const { day, hour, minute } = shanghaiParts(now)
   const after1130 = hour > 11 || (hour === 11 && minute >= 30)
-  const after1730 = hour > 17 || (hour === 17 && minute >= 30)
   const types: AdxRankType[] = []
   const attempts = (rankType: AdxRankType, period: string) => runs.filter((run) => run.rankType === rankType && run.period === period && run.status === "failed").length
   const completed = (rankType: AdxRankType, period: string) => runs.some((run) => run.rankType === rankType && run.period === period && (run.status === "success" || run.status === "skipped"))
   const wasEnabledFor = (rankType: AdxRankType, period: string) => !enabledAt || new Date(enabledAt).getTime() <= scheduledAtForPeriod(rankType, period)
-  const dayPeriod = getPreviousAdxPeriod("day", now)
-  const weekPeriod = getPreviousAdxPeriod("week", now)
   const monthPeriod = getPreviousAdxPeriod("month", now)
-  const dayAttempts = attempts("day", dayPeriod)
-  if (after1130 && dayAttempts === 0 && !completed("day", dayPeriod) && wasEnabledFor("day", dayPeriod)) types.push("day")
-  if (after1730 && dayAttempts === 1 && !completed("day", dayPeriod) && !types.includes("day") && wasEnabledFor("day", dayPeriod)) types.push("day")
-  const weekAttempts = attempts("week", weekPeriod)
-  if (after1130 && weekday >= 2 && weekAttempts === 0 && !completed("week", weekPeriod) && wasEnabledFor("week", weekPeriod)) types.push("week")
-  if (after1130 && weekday >= 3 && weekAttempts === 1 && !completed("week", weekPeriod) && !types.includes("week") && wasEnabledFor("week", weekPeriod)) types.push("week")
   const monthAttempts = attempts("month", monthPeriod)
   if (after1130 && day >= 3 && monthAttempts === 0 && !completed("month", monthPeriod) && wasEnabledFor("month", monthPeriod)) types.push("month")
   if (after1130 && day >= 4 && monthAttempts === 1 && !completed("month", monthPeriod) && !types.includes("month") && wasEnabledFor("month", monthPeriod)) types.push("month")
@@ -231,15 +218,13 @@ function runRecord(rankType: AdxRankType, period: string, status: AdxScheduleRun
 }
 
 export function getScheduledAdxBoardTasks(now: Date, runs: AdxScheduleRun[] = [], enabledAt?: string) {
-  const { year, month, day, hour, minute } = shanghaiParts(now)
-  const weekday = utcCalendarDate(year, month, day).getUTCDay()
+  const { day, hour, minute } = shanghaiParts(now)
   const after1130 = hour > 11 || (hour === 11 && minute >= 30)
-  const after1730 = hour > 17 || (hour === 17 && minute >= 30)
   const due: { rankType: AdxRankType; period: string; boardType: AdxBoardType; platform?: string }[] = []
-  for (const rankType of ["day", "week", "month"] as const) {
+  for (const rankType of ["month"] as const) {
     const period = getPreviousAdxPeriod(rankType, now)
-    const initialWindow = rankType === "day" ? after1130 : after1130 && (rankType === "week" ? weekday >= 2 : day >= 3)
-    const retryWindow = rankType === "day" ? after1730 : after1130 && (rankType === "week" ? weekday >= 3 : day >= 4)
+    const initialWindow = after1130 && day >= 3
+    const retryWindow = after1130 && day >= 4
     if (enabledAt && new Date(enabledAt).getTime() > scheduledAtForPeriod(rankType, period)) continue
     const boards: { boardType: AdxBoardType; platform?: string }[] = [
       { boardType: "short-drama" }, { boardType: "tiktok-hot" },

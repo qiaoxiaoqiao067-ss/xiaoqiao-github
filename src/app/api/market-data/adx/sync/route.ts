@@ -22,7 +22,8 @@ export async function POST(request: Request) {
     if(!access)return NextResponse.json({error:"没有市场数据编辑权限"},{status:403})
     const ownerId=access.ownerId
     const body = (await request.json().catch(() => ({}))) as { rankType?: string; dryRun?: boolean; boardType?: string; platform?: string; expectedPeriod?: string }
-    const rankType: AdxRankType = body.rankType === "day" || body.rankType === "week" || body.rankType === "month" ? body.rankType : "week"
+    const rankType: AdxRankType = "month"
+    if (body.rankType && body.rankType !== "month") return NextResponse.json({ error: "市场数据看板已改为仅支持月榜" }, { status: 400 })
     const boardType: AdxBoardType = body.boardType === "short-drama" || body.boardType === "tiktok-hot" || body.boardType === "platform" ? body.boardType : "short-drama"
     const expectedPeriod = body.expectedPeriod?.trim()
     const periodPattern = rankType === "month" ? /^20\d{2}年(?:[1-9]|1[0-2])月$/ : rankType === "week" ? /^20\d{2}年第(?:[1-9]|[1-4]\d|5[0-3])周$/ : /^20\d{2}年(?:[1-9]|1[0-2])月(?:[1-9]|[12]\d|3[01])日$/
