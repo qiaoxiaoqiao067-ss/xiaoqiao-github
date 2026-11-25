@@ -41,6 +41,7 @@ export async function updateSession(request: NextRequest) {
     "/docs",
     "/content",
     "/ai-learning",
+    "/learning",
     "/projects",
     "/market-data",
     "/discover",
