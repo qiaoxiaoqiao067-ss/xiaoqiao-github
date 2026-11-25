@@ -3,9 +3,9 @@ import { z } from "zod"
 import { requireUser } from "@/lib/supabase/require-user"
 import { serviceClient } from "@/lib/supabase/service"
 
-const MODULES = ["content", "projects", "market_data", "discover"] as const
-const moduleLabel: Record<(typeof MODULES)[number], string> = { content: "责编审稿", projects: "项目推进", market_data: "市场数据看板", discover: "选题情报" }
-const inviteSchema = z.object({ email: z.string().trim().email(), role: z.enum(["collaborator", "viewer"]).default("collaborator"), modules: z.array(z.enum(MODULES)).min(1).max(4) })
+const MODULES = ["content", "projects", "market_data", "discover", "learning"] as const
+const moduleLabel: Record<(typeof MODULES)[number], string> = { content: "责编审稿", projects: "项目推进", market_data: "市场数据看板", discover: "选题情报", learning: "学员学习" }
+const inviteSchema = z.object({ email: z.string().trim().email(), role: z.enum(["collaborator", "viewer"]).default("viewer"), modules: z.array(z.enum(MODULES)).min(1).max(5) })
 
 async function ownerWorkspace(userId: string) {
   const { data, error } = await serviceClient.from("workspaces").select("id,name,owner_id").eq("owner_id", userId).maybeSingle()
