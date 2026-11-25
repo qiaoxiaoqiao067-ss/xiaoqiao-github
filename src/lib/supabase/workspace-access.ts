@@ -1,7 +1,7 @@
 import { serviceClient } from "@/lib/supabase/service"
 import { resolveWorkspacePermission, type WorkspaceRole } from "@/lib/supabase/workspace-permission"
 
-export const WORKSPACE_MODULES = ["content", "projects", "market_data", "discover"] as const
+export const WORKSPACE_MODULES = ["content", "projects", "market_data", "discover", "learning"] as const
 export type WorkspaceModule = (typeof WORKSPACE_MODULES)[number]
 export type WorkspaceAction = "view" | "edit"
 
