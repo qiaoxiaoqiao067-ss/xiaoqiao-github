@@ -32,7 +32,7 @@ export function boardSamples(imports: Source[], kind: MarketPeriodKind): BoardSa
     const key = marketBoardKey(source.source_name, source.file_name)
     const period = source.period_label || ''
     const rows = sampleMarketRows(source.raw_rows, kind, r => metricNumber(r[rankKey]))
-    const sort=value(source.raw_rows[0]?.['采集排序'])||undefined
+    const sort=value(source.raw_rows[0]?.['采集排序'])||source.file_name.match(/(?:^|[_-])(总素材数|新素材数|播放增量|热度)(?=[_.-]|$)/)?.[1]
     const scope=value(source.raw_rows[0]?.['采集筛选'])||undefined
     const issues: string[] = [...(source.analysis_issues || [])]
     const captureIssue=value(source.raw_rows[0]?.['采集校验']);if(captureIssue)issues.push(captureIssue)

@@ -585,7 +585,7 @@ export default function MarketDataPage() {
   return <MarketDashboardV2 />;
 }
 
-export function LegacyMarketDataPage() {
+function LegacyMarketDataPage() {
   const canEdit = useModuleEdit("market_data")
   const canEditIdeas = useModuleEdit("discover")
 

@@ -1,5 +1,5 @@
 import { boardSamples } from './board-analysis'
-import {marketBoardKey} from './monitoring-policy'
+import {latestBoardImports,marketBoardKey} from './monitoring-policy'
 export type ImportMeta = {id:string; source_name:string; file_name:string; period_label:string|null; created_at:string; updated_at:string}
 export function periodKind(value:string): 'month'|'week'|'day' { return /周|W\d/i.test(value)?'week':/日$|^\d{4}-\d{2}-\d{2}$/.test(value)?'day':'month' }
 export function periodOrder(value:string) { const n=value.match(/\d+/g)||[];return Number(n[0]||0)*10000+Number(n[1]||0)*100+Number(n[2]||0) }
@@ -9,8 +9,9 @@ export function comparisonPeriod(metadata:ImportMeta[],period:string,choice:stri
 }
 export function isBoardImport(item:{source_name:string}) { return item.source_name!=='中文名映射'&&item.source_name!=='海外AI真人短剧日报'&&!/^(外部信号:|市场版本:|ADX日报:|ADX同步:|市场研究:)/.test(item.source_name) }
 export function requestedImports<T extends ImportMeta>(metadata:T[],period:string,comparison:string) {
-  const currentKeys=new Set(metadata.filter(m=>m.period_label===period&&isBoardImport(m)).map(m=>marketBoardKey(m.source_name,m.file_name)))
-  return metadata.filter(m=>m.source_name==='中文名映射'||m.period_label===period||!!comparison&&m.period_label===comparison&&(!isBoardImport(m)||currentKeys.has(marketBoardKey(m.source_name,m.file_name))))
+  const active = new Set(latestBoardImports(metadata.filter(isBoardImport)).map(m=>m.id))
+  const currentKeys=new Set(metadata.filter(m=>active.has(m.id)&&m.period_label===period).map(m=>marketBoardKey(m.source_name,m.file_name)))
+  return metadata.filter(m=>(!isBoardImport(m)||active.has(m.id))&&(m.source_name==='中文名映射'||m.period_label===period||!!comparison&&m.period_label===comparison&&(!isBoardImport(m)||currentKeys.has(marketBoardKey(m.source_name,m.file_name)))))
 }
 export function analysisSnapshot<T extends ImportMeta & {raw_rows:Record<string,unknown>[]}>(item:T) {
   if(!isBoardImport(item)) return {rows:item.raw_rows,issues:[] as string[]}
