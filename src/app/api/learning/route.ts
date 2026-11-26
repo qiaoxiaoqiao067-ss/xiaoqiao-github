@@ -25,11 +25,12 @@ const submitSchema = z.object({
   reflection: z.string().trim().max(4000),
 })
 const retrySchema = z.object({ action: z.literal("retry_grade"), submissionId: z.string().uuid() })
+const acceptSchema = z.object({ action: z.literal("accept"), assignmentId: z.string().uuid() })
 const updateSchema = publishSchema.omit({ action: true }).extend({ action: z.literal("update"), assignmentId: z.string().uuid() })
 const archiveSchema = z.object({ action: z.literal("archive"), assignmentId: z.string().uuid() })
 const restoreSchema = z.object({ action: z.literal("restore"), assignmentId: z.string().uuid() })
 const managementSchema = z.discriminatedUnion("action", [updateSchema, archiveSchema, restoreSchema])
-const actionSchema = z.discriminatedUnion("action", [publishSchema, submitSchema, retrySchema])
+const actionSchema = z.discriminatedUnion("action", [publishSchema, submitSchema, retrySchema, acceptSchema])
 const breakdownSchema = z.object({
   steps: z.array(z.object({
     title: z.string().trim().min(2).max(100),
@@ -130,7 +131,7 @@ export async function GET() {
     const access = await getWorkspaceAccess(user.id, "learning")
     if (!access?.canView) return NextResponse.json({ error: "无学习页权限" }, { status: 403 })
     const owner = access.role === "owner"
-    let query = serviceClient.from("learning_assignments").select("id,workspace_id,learner_id,created_by,title,brief,cadence,due_date,steps,status,created_at,updated_at,archived_at,origin_submission_id").eq("workspace_id", access.workspaceId).is("archived_at", null).order("created_at", { ascending: false }).limit(100)
+    let query = serviceClient.from("learning_assignments").select("id,workspace_id,learner_id,created_by,title,brief,cadence,due_date,steps,status,created_at,updated_at,archived_at,accepted_at,origin_submission_id").eq("workspace_id", access.workspaceId).is("archived_at", null).order("created_at", { ascending: false }).limit(100)
     if (!owner) query = query.eq("learner_id", user.id)
     const { data: assignments, error: assignmentError } = await query
     if (assignmentError) throw assignmentError
@@ -197,10 +198,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ id: data.id }, { status: 201 })
     }
 
+    if (input.action === "accept") {
+      if (access.role === "owner") return NextResponse.json({ error: "只有学员可以确认接收任务" }, { status: 403 })
+      const { data: assignment, error: readError } = await serviceClient.from("learning_assignments")
+        .select("id,accepted_at,updated_at,status").eq("id", input.assignmentId).eq("workspace_id", access.workspaceId)
+        .eq("learner_id", user.id).is("archived_at", null).maybeSingle()
+      if (readError) throw readError
+      if (!assignment) return NextResponse.json({ error: "任务不存在或无权接收" }, { status: 404 })
+      if (assignment.accepted_at) return NextResponse.json({ acceptedAt: assignment.accepted_at, message: "任务已确认接收。" })
+      if (assignment.status !== "published") return NextResponse.json({ error: "任务状态已变化，请刷新页面" }, { status: 409 })
+      const { data: accepted, error: updateError } = await serviceClient.from("learning_assignments")
+        .update({ accepted_at: new Date().toISOString() }).eq("id", assignment.id).eq("workspace_id", access.workspaceId)
+        .eq("learner_id", user.id).eq("updated_at", assignment.updated_at).eq("status", "published")
+        .is("archived_at", null).is("accepted_at", null).select("accepted_at").maybeSingle()
+      if (updateError) throw updateError
+      if (!accepted) return NextResponse.json({ error: "任务在接收期间发生变化，请刷新后重新确认" }, { status: 409 })
+      return NextResponse.json({ acceptedAt: accepted.accepted_at, message: "已确认接收任务。" })
+    }
+
     if (input.action === "submit") {
-      const { data: assignment, error: assignmentError } = await serviceClient.from("learning_assignments").select("id,workspace_id,learner_id,created_by,title,brief,steps").eq("id", input.assignmentId).eq("workspace_id", access.workspaceId).eq("learner_id", user.id).is("archived_at", null).maybeSingle()
+      const { data: assignment, error: assignmentError } = await serviceClient.from("learning_assignments").select("id,workspace_id,learner_id,created_by,title,brief,steps,accepted_at").eq("id", input.assignmentId).eq("workspace_id", access.workspaceId).eq("learner_id", user.id).is("archived_at", null).maybeSingle()
       if (assignmentError) throw assignmentError
       if (!assignment) return NextResponse.json({ error: "任务不存在或无权提交" }, { status: 404 })
+      if (!assignment.accepted_at) return NextResponse.json({ error: "请先确认接收任务，再提交作业" }, { status: 409 })
       const { data: submission, error: insertError } = await serviceClient.from("learning_submissions").insert({
         workspace_id: access.workspaceId,
         assignment_id: assignment.id,
@@ -272,6 +292,7 @@ export async function PATCH(request: NextRequest) {
         cadence: input.cadence,
         due_date: input.dueDate,
         steps,
+        accepted_at: null,
         updated_at: new Date().toISOString(),
       }).eq("id", input.assignmentId).eq("workspace_id", access.workspaceId).eq("status", "published").is("archived_at", null).select("id").maybeSingle()
       if (updateError) throw updateError
