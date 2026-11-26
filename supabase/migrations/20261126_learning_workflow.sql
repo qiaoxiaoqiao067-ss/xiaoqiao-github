@@ -10,11 +10,10 @@ create table if not exists public.learning_assignments (
   due_date date,
   steps jsonb not null default '[]'::jsonb,
   status text not null default 'published' check (status in ('published','completed')),
-  origin_submission_id uuid,
+  origin_submission_id uuid unique,
   created_at timestamptz not null default now()
 );
 create index if not exists learning_assignments_learner_idx on public.learning_assignments (workspace_id, learner_id, created_at desc);
-create unique index if not exists learning_assignments_origin_idx on public.learning_assignments (origin_submission_id) where origin_submission_id is not null;
 
 create table if not exists public.learning_submissions (
   id uuid primary key default gen_random_uuid(),
