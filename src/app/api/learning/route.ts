@@ -6,6 +6,7 @@ import { getWorkspaceAccess } from "@/lib/supabase/workspace-access"
 import { serviceClient } from "@/lib/supabase/service"
 
 export const dynamic = "force-dynamic"
+export const maxDuration = 120
 
 const publishSchema = z.object({
   action: z.literal("publish"),
@@ -75,16 +76,7 @@ async function gradeSubmission(
   ].join("\n\n")
   const grade = parseJson(await runCodex(prompt, 90000), gradeSchema)
   const total = Object.values(grade.scores).reduce((sum, value) => sum + value, 0)
-  const { error: updateError } = await serviceClient.from("learning_submissions").update({
-    review_status: "graded",
-    score: grade.scores,
-    total_score: total,
-    feedback: grade.feedback,
-    next_plan: { strengths: grade.strengths, improvements: grade.improvements, next_task: grade.next_task },
-  }).eq("id", submission.id).eq("workspace_id", submission.workspace_id)
-  if (updateError) throw updateError
-
-  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const tomorrow = new Date(Date.now() + 32 * 60 * 60 * 1000).toISOString().slice(0, 10)
   const { error: nextError } = await serviceClient.from("learning_assignments").upsert({
     workspace_id: submission.workspace_id,
     learner_id: submission.learner_id,
@@ -97,6 +89,14 @@ async function gradeSubmission(
     origin_submission_id: submission.id,
   }, { onConflict: "origin_submission_id" })
   if (nextError) throw nextError
+  const { error: updateError } = await serviceClient.from("learning_submissions").update({
+    review_status: "graded",
+    score: grade.scores,
+    total_score: total,
+    feedback: grade.feedback,
+    next_plan: { strengths: grade.strengths, improvements: grade.improvements, next_task: grade.next_task },
+  }).eq("id", submission.id).eq("workspace_id", submission.workspace_id)
+  if (updateError) throw updateError
   return total
 }
 
