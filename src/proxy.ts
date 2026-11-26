@@ -47,7 +47,8 @@ export async function proxy(request: NextRequest) {
     if(isApi)return NextResponse.json({error:"认证服务暂时不可用"},{status:503})
     const url = request.nextUrl.clone()
     url.pathname = "/login"
-    url.searchParams.set("next", request.nextUrl.pathname)
+    url.search = ""
+    url.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search)
     return NextResponse.redirect(url)
   }
 
@@ -55,6 +56,8 @@ export async function proxy(request: NextRequest) {
     if(isApi)return NextResponse.json({error:"Unauthorized"},{status:401})
     const url = request.nextUrl.clone()
     url.pathname = "/login"
+    url.search = ""
+    url.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search)
     return NextResponse.redirect(url)
   }
 
