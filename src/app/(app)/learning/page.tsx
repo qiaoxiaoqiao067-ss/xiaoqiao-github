@@ -138,7 +138,7 @@ export default function LearningPage() {
             <CardContent>
               <form onSubmit={publish} className="space-y-4">
                 <label className="block space-y-2 text-sm">可选训练模板
-                  <select className="flex h-10 w-full rounded-full border border-input bg-card px-4" defaultValue="" onChange={(event) => { const item = trainingTemplates[Number(event.target.value)]; if (item) { setTitle(item.title); setBrief(item.brief); setCadence(item.cadence) } }}>
+                  <select className="flex h-10 w-full rounded-full border border-input bg-card px-4" defaultValue="" onChange={(event) => { const item = event.target.value === "" ? undefined : trainingTemplates[Number(event.target.value)]; if (item) { setTitle(item.title); setBrief(item.brief); setCadence(item.cadence) } }}>
                     <option value="">自行填写任务，或选择模板</option>
                     {trainingTemplates.map((item, index) => <option key={item.title} value={index}>{item.title}</option>)}
                   </select>
