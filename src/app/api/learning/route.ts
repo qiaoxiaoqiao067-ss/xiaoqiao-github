@@ -25,6 +25,10 @@ const submitSchema = z.object({
   reflection: z.string().trim().max(4000),
 })
 const retrySchema = z.object({ action: z.literal("retry_grade"), submissionId: z.string().uuid() })
+const updateSchema = publishSchema.omit({ action: true }).extend({ action: z.literal("update"), assignmentId: z.string().uuid() })
+const archiveSchema = z.object({ action: z.literal("archive"), assignmentId: z.string().uuid() })
+const restoreSchema = z.object({ action: z.literal("restore"), assignmentId: z.string().uuid() })
+const managementSchema = z.discriminatedUnion("action", [updateSchema, archiveSchema, restoreSchema])
 const actionSchema = z.discriminatedUnion("action", [publishSchema, submitSchema, retrySchema])
 const breakdownSchema = z.object({
   steps: z.array(z.object({
@@ -101,6 +105,24 @@ async function gradeSubmission(
   return total
 }
 
+async function learnerIsAuthorized(workspaceId: string, learnerId: string) {
+  const { data: member, error: memberError } = await serviceClient.from("workspace_members").select("user_id").eq("workspace_id", workspaceId).eq("user_id", learnerId).eq("status", "active").maybeSingle()
+  if (memberError) throw memberError
+  const { data: permission, error: permissionError } = await serviceClient.from("workspace_module_permissions").select("can_view").eq("workspace_id", workspaceId).eq("user_id", learnerId).eq("module_key", "learning").maybeSingle()
+  if (permissionError) throw permissionError
+  return Boolean(member && permission?.can_view)
+}
+
+async function generateSteps(input: { title: string; brief: string; cadence: "daily" | "weekly" | "extra"; dueDate: string | null }) {
+  const prompt = [
+    "你是短剧学习导师。请将负责人自行编写的任务拆成 2 到 8 个可执行、可检查的步骤，只输出 JSON 对象，不要 Markdown。",
+    "保持负责人设定的主题与交付范围。任务可能是 AI 工具实操、短剧市场观察、观看与拆解剧集、动手创作或从多元立场思考。研究任务安排来源核查；看片任务安排具体场景记录与人物动机分析；实操任务安排作品、迭代与错误复盘；多元思考任务安排不同立场与反例。不要把所有任务都强制改成市场检索，不要代替学员完成任务，也不要编造资料。",
+    "输出格式：{\"steps\":[{\"title\":\"步骤标题\",\"instructions\":\"具体动作\",\"deliverable\":\"可检查的交付物\"}]}。",
+    "任务：" + JSON.stringify({ title: input.title, brief: input.brief, cadence: input.cadence, dueDate: input.dueDate }),
+  ].join("\n\n")
+  return parseJson(await runCodex(prompt, 90000), breakdownSchema).steps
+}
+
 export async function GET() {
   try {
     const { user, response } = await requireUser()
@@ -108,7 +130,7 @@ export async function GET() {
     const access = await getWorkspaceAccess(user.id, "learning")
     if (!access?.canView) return NextResponse.json({ error: "无学习页权限" }, { status: 403 })
     const owner = access.role === "owner"
-    let query = serviceClient.from("learning_assignments").select("id,workspace_id,learner_id,created_by,title,brief,cadence,due_date,steps,status,created_at,origin_submission_id").eq("workspace_id", access.workspaceId).order("created_at", { ascending: false }).limit(100)
+    let query = serviceClient.from("learning_assignments").select("id,workspace_id,learner_id,created_by,title,brief,cadence,due_date,steps,status,created_at,updated_at,archived_at,origin_submission_id").eq("workspace_id", access.workspaceId).is("archived_at", null).order("created_at", { ascending: false }).limit(100)
     if (!owner) query = query.eq("learner_id", user.id)
     const { data: assignments, error: assignmentError } = await query
     if (assignmentError) throw assignmentError
@@ -136,7 +158,12 @@ export async function GET() {
       const member = (members || []).find((item) => item.user_id === id)
       return { id, email: profile?.email || member?.invited_email || id, name: profile?.name || null }
     })
-    return NextResponse.json({ role: "owner", assignments, submissions, learners }, { headers: { "Cache-Control": "private, no-store" } })
+    const { data: archivedAssignments, error: archivedError } = await serviceClient.from("learning_assignments")
+      .select("id,title,learner_id,due_date,archived_at,created_at")
+      .eq("workspace_id", access.workspaceId).not("archived_at", "is", null)
+      .order("archived_at", { ascending: false }).limit(50)
+    if (archivedError) throw archivedError
+    return NextResponse.json({ role: "owner", assignments, submissions, learners, archivedAssignments }, { headers: { "Cache-Control": "private, no-store" } })
   } catch (error) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 500 })
   }
@@ -154,18 +181,8 @@ export async function POST(request: NextRequest) {
 
     if (input.action === "publish") {
       if (access.role !== "owner") return NextResponse.json({ error: "只有负责人可以发布任务" }, { status: 403 })
-      const { data: member, error: memberError } = await serviceClient.from("workspace_members").select("user_id").eq("workspace_id", access.workspaceId).eq("user_id", input.learnerId).eq("status", "active").maybeSingle()
-      if (memberError) throw memberError
-      const { data: permission, error: permissionError } = await serviceClient.from("workspace_module_permissions").select("can_view").eq("workspace_id", access.workspaceId).eq("user_id", input.learnerId).eq("module_key", "learning").maybeSingle()
-      if (permissionError) throw permissionError
-      if (!member || !permission?.can_view) return NextResponse.json({ error: "学员尚未获得学习页权限" }, { status: 400 })
-      const prompt = [
-        "你是短剧学习导师。请将负责人自行编写的任务拆成 2 到 8 个可执行、可检查的步骤，只输出 JSON 对象，不要 Markdown。",
-        "保持负责人设定的主题与交付范围。任务可能是 AI 工具实操、短剧市场观察、观看与拆解剧集、动手创作或从多元立场思考。研究任务安排来源核查；看片任务安排具体场景记录与人物动机分析；实操任务安排作品、迭代与错误复盘；多元思考任务安排不同立场与反例。不要把所有任务都强制改成市场检索，不要代替学员完成任务，也不要编造资料。",
-        "输出格式：{\"steps\":[{\"title\":\"步骤标题\",\"instructions\":\"具体动作\",\"deliverable\":\"可检查的交付物\"}]}。",
-        "任务：" + JSON.stringify({ title: input.title, brief: input.brief, cadence: input.cadence, dueDate: input.dueDate }),
-      ].join("\n\n")
-      const breakdown = parseJson(await runCodex(prompt, 90000), breakdownSchema)
+      if (!await learnerIsAuthorized(access.workspaceId, input.learnerId)) return NextResponse.json({ error: "学员尚未获得学习页权限" }, { status: 400 })
+      const steps = await generateSteps(input)
       const { data, error } = await serviceClient.from("learning_assignments").insert({
         workspace_id: access.workspaceId,
         learner_id: input.learnerId,
@@ -174,14 +191,14 @@ export async function POST(request: NextRequest) {
         brief: input.brief,
         cadence: input.cadence,
         due_date: input.dueDate,
-        steps: breakdown.steps,
+        steps,
       }).select("id").single()
       if (error) throw error
       return NextResponse.json({ id: data.id }, { status: 201 })
     }
 
     if (input.action === "submit") {
-      const { data: assignment, error: assignmentError } = await serviceClient.from("learning_assignments").select("id,workspace_id,learner_id,created_by,title,brief,steps").eq("id", input.assignmentId).eq("workspace_id", access.workspaceId).eq("learner_id", user.id).maybeSingle()
+      const { data: assignment, error: assignmentError } = await serviceClient.from("learning_assignments").select("id,workspace_id,learner_id,created_by,title,brief,steps").eq("id", input.assignmentId).eq("workspace_id", access.workspaceId).eq("learner_id", user.id).is("archived_at", null).maybeSingle()
       if (assignmentError) throw assignmentError
       if (!assignment) return NextResponse.json({ error: "任务不存在或无权提交" }, { status: 404 })
       const { data: submission, error: insertError } = await serviceClient.from("learning_submissions").insert({
@@ -214,6 +231,67 @@ export async function POST(request: NextRequest) {
     if (assignmentError) throw assignmentError
     const total = await gradeSubmission(submission, assignment)
     return NextResponse.json({ id: submission.id, reviewStatus: "graded", total })
+  } catch (error) {
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 })
+  }
+}
+
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const { user, response } = await requireUser()
+    if (response) return response
+    const access = await getWorkspaceAccess(user.id, "learning")
+    if (!access || access.role !== "owner") return NextResponse.json({ error: "只有负责人可以管理学习任务" }, { status: 403 })
+    const parsed = managementSchema.safeParse(await request.json())
+    if (!parsed.success) return NextResponse.json({ error: "请检查修改内容", details: parsed.error.flatten() }, { status: 400 })
+    const input = parsed.data
+
+    if (input.action === "update") {
+      const { data: assignment, error: readError } = await serviceClient.from("learning_assignments")
+        .select("id,status,archived_at").eq("id", input.assignmentId).eq("workspace_id", access.workspaceId).maybeSingle()
+      if (readError) throw readError
+      if (!assignment) return NextResponse.json({ error: "任务不存在" }, { status: 404 })
+      if (assignment.archived_at) return NextResponse.json({ error: "请先从回收区恢复任务" }, { status: 409 })
+      if (assignment.status !== "published") return NextResponse.json({ error: "已提交的任务不能修改评分依据" }, { status: 409 })
+      const { data: submission, error: submissionError } = await serviceClient.from("learning_submissions")
+        .select("id").eq("workspace_id", access.workspaceId).eq("assignment_id", input.assignmentId).limit(1).maybeSingle()
+      if (submissionError) throw submissionError
+      if (submission) return NextResponse.json({ error: "已提交的任务不能修改评分依据" }, { status: 409 })
+      if (!await learnerIsAuthorized(access.workspaceId, input.learnerId)) return NextResponse.json({ error: "学员尚未获得学习页权限" }, { status: 400 })
+
+      const steps = await generateSteps(input)
+      const { data: lateSubmission, error: lateError } = await serviceClient.from("learning_submissions")
+        .select("id").eq("workspace_id", access.workspaceId).eq("assignment_id", input.assignmentId).limit(1).maybeSingle()
+      if (lateError) throw lateError
+      if (lateSubmission) return NextResponse.json({ error: "学员已在修改期间提交，请刷新页面" }, { status: 409 })
+      const { data: updated, error: updateError } = await serviceClient.from("learning_assignments").update({
+        learner_id: input.learnerId,
+        title: input.title,
+        brief: input.brief,
+        cadence: input.cadence,
+        due_date: input.dueDate,
+        steps,
+        updated_at: new Date().toISOString(),
+      }).eq("id", input.assignmentId).eq("workspace_id", access.workspaceId).eq("status", "published").is("archived_at", null).select("id").maybeSingle()
+      if (updateError) throw updateError
+      if (!updated) return NextResponse.json({ error: "任务状态已变化，请刷新页面" }, { status: 409 })
+      return NextResponse.json({ id: updated.id, message: "任务已修改，AI 已重新拆解步骤。" })
+    }
+
+    const now = new Date().toISOString()
+    let query = serviceClient.from("learning_assignments").update({
+      archived_at: input.action === "archive" ? now : null,
+      updated_at: now,
+    }).eq("id", input.assignmentId).eq("workspace_id", access.workspaceId)
+    query = input.action === "archive" ? query.is("archived_at", null) : query.not("archived_at", "is", null)
+    const { data: changed, error } = await query.select("id").maybeSingle()
+    if (error) throw error
+    if (!changed) return NextResponse.json({ error: "任务不存在或状态已变化" }, { status: 404 })
+    return NextResponse.json({
+      id: changed.id,
+      message: input.action === "archive" ? "任务已从学员页面删除，可在回收区恢复。" : "任务已恢复，学员可重新查看。",
+    })
   } catch (error) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 500 })
   }
