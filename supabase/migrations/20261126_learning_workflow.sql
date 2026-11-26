@@ -38,3 +38,4 @@ alter table public.learning_assignments enable row level security;
 alter table public.learning_submissions enable row level security;
 revoke all on public.learning_assignments from anon, authenticated;
 revoke all on public.learning_submissions from anon, authenticated;
+grant select, insert, update, delete on table public.learning_assignments, public.learning_submissions to service_role;

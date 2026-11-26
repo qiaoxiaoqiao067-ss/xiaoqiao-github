@@ -118,19 +118,24 @@ export async function GET() {
     if (submissionError) throw submissionError
     if (!owner) return NextResponse.json({ role: "learner", assignments, submissions }, { headers: { "Cache-Control": "private, no-store" } })
 
-    const { data: members, error: memberError } = await serviceClient.from("workspace_members").select("user_id,status").eq("workspace_id", access.workspaceId).eq("status", "active")
+    const { data: members, error: memberError } = await serviceClient.from("workspace_members").select("user_id,status,invited_email").eq("workspace_id", access.workspaceId).eq("status", "active")
     if (memberError) throw memberError
     const memberIds = (members || []).map((member) => member.user_id)
     const { data: permissions, error: permissionError } = memberIds.length
       ? await serviceClient.from("workspace_module_permissions").select("user_id,can_view").eq("workspace_id", access.workspaceId).eq("module_key", "learning").eq("can_view", true).in("user_id", memberIds)
       : { data: [], error: null }
     if (permissionError) throw permissionError
-    const learnerIds = (permissions || []).map((item) => item.user_id)
+    const learnerIds = (permissions || []).map((item) => item.user_id).filter((id) => id !== access.ownerId)
     const { data: profiles, error: profileError } = learnerIds.length
       ? await serviceClient.from("users").select("id,email,name").in("id", learnerIds)
       : { data: [], error: null }
     if (profileError) throw profileError
-    return NextResponse.json({ role: "owner", assignments, submissions, learners: profiles }, { headers: { "Cache-Control": "private, no-store" } })
+    const learners = learnerIds.map((id) => {
+      const profile = (profiles || []).find((item) => item.id === id)
+      const member = (members || []).find((item) => item.user_id === id)
+      return { id, email: profile?.email || member?.invited_email || id, name: profile?.name || null }
+    })
+    return NextResponse.json({ role: "owner", assignments, submissions, learners }, { headers: { "Cache-Control": "private, no-store" } })
   } catch (error) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 500 })
   }
