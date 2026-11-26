@@ -67,10 +67,11 @@ async function gradeSubmission(
   assignment: { id: string; title: string; brief: string; steps: unknown; created_by: string },
 ) {
   const prompt = [
-    "你是短剧行业研究训练的导师。只输出 JSON 对象，不要 Markdown。",
-    "基于学员提交的材料评分。你没有独立核验外部链接，不能把未核验的材料说成事实；要指出证据缺口。",
-    "评分维度与上限：retrieval 检索广度与来源质量 25，evidence 可追溯证据 25，reasoning 事实、推断和反例的逻辑 25，synthesis 结论与迁移 15，reflection 复盘 10。",
-    "输出格式：{\"scores\":{\"retrieval\":0,\"evidence\":0,\"reasoning\":0,\"synthesis\":0,\"reflection\":0},\"feedback\":\"具体评语\",\"strengths\":[\"...\"],\"improvements\":[\"...\"],\"next_task\":{\"title\":\"明日任务\",\"brief\":\"针对薄弱点的任务说明，要求自主检索\",\"steps\":[\"...\",\"...\"]}}。",
+    "你是短剧学习导师，任务可能涉及 AI 工具、市场观察、看片拆解、动手创作或多元视角。只输出 JSON 对象，不要 Markdown。",
+    "依据具体任务评分：研究任务看来源与核查，看片任务看具体场景与人物因果，实操任务看过程、作品和迭代，多元思考看能否准确理解不同立场。不要强迫每种任务都引用市场数据。你没有独立核验链接或作品，不能把未核验内容说成事实；要指出证据缺口。",
+    "评分维度与上限：retrieval 信息获取与问题定位 25，evidence 具体观察、实践过程或可追溯证据 25，reasoning 因果分析与不同解释的逻辑 25，synthesis 作品质量或跨场景迁移 15，reflection 对错误、局限和他人视角的复盘 10。按任务目标适配每项标准。",
+    "输出格式：{\"scores\":{\"retrieval\":0,\"evidence\":0,\"reasoning\":0,\"synthesis\":0,\"reflection\":0},\"feedback\":\"具体评语\",\"strengths\":[\"...\"],\"improvements\":[\"...\"],\"next_task\":{\"title\":\"明日任务\",\"brief\":\"针对薄弱点的任务说明，要求自主实践与思考\",\"steps\":[\"...\",\"...\"]}}。",
+    "长期训练应覆盖 AI 工具使用、短剧市场、内容与人物世界观拆解、动手产出、包容多元的思考。次日任务优先练本次薄弱点，避免机械重复。",
     "作业：" + JSON.stringify({ title: assignment.title, brief: assignment.brief, steps: assignment.steps }),
     "提交：" + JSON.stringify({ sources: submission.sources, findings: submission.findings, reasoning: submission.reasoning, reflection: submission.reflection }),
   ].join("\n\n")
@@ -85,7 +86,7 @@ async function gradeSubmission(
     brief: grade.next_task.brief,
     cadence: "daily",
     due_date: tomorrow,
-    steps: grade.next_task.steps.map((step) => ({ title: step, instructions: step, deliverable: "在提交中列出证据和判断过程" })),
+    steps: grade.next_task.steps.map((step) => ({ title: step, instructions: step, deliverable: "提交具体观察或作品，并说明过程与判断" })),
     origin_submission_id: submission.id,
   }, { onConflict: "origin_submission_id" })
   if (nextError) throw nextError
@@ -159,8 +160,8 @@ export async function POST(request: NextRequest) {
       if (permissionError) throw permissionError
       if (!member || !permission?.can_view) return NextResponse.json({ error: "学员尚未获得学习页权限" }, { status: 400 })
       const prompt = [
-        "你是短剧研究导师。请将负责人给出的任务拆成 2 到 8 个可验证的学习步骤，只输出 JSON 对象，不要 Markdown。",
-        "训练重点：主动检索不同来源、记录链接和日期、区分事实与推断、寻找反例、形成可迁移的结论。不要代替学员完成研究，也不要编造资料。",
+        "你是短剧学习导师。请将负责人自行编写的任务拆成 2 到 8 个可执行、可检查的步骤，只输出 JSON 对象，不要 Markdown。",
+        "保持负责人设定的主题与交付范围。任务可能是 AI 工具实操、短剧市场观察、观看与拆解剧集、动手创作或从多元立场思考。研究任务安排来源核查；看片任务安排具体场景记录与人物动机分析；实操任务安排作品、迭代与错误复盘；多元思考任务安排不同立场与反例。不要把所有任务都强制改成市场检索，不要代替学员完成任务，也不要编造资料。",
         "输出格式：{\"steps\":[{\"title\":\"步骤标题\",\"instructions\":\"具体动作\",\"deliverable\":\"可检查的交付物\"}]}。",
         "任务：" + JSON.stringify({ title: input.title, brief: input.brief, cadence: input.cadence, dueDate: input.dueDate }),
       ].join("\n\n")
