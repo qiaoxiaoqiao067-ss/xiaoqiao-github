@@ -25,7 +25,7 @@ create table if not exists public.workspace_members (
 create table if not exists public.workspace_module_permissions (
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
-  module_key text not null check (module_key in ('content','projects','market_data','discover')),
+  module_key text not null check (module_key in ('content','projects','market_data','discover','learning')),
   can_view boolean not null default true,
   can_edit boolean not null default false,
   created_at timestamptz not null default now(),
@@ -49,7 +49,7 @@ on conflict (workspace_id, user_id) do update set role='owner', status='active';
 insert into public.workspace_module_permissions(workspace_id, user_id, module_key, can_view, can_edit)
 select w.id, w.owner_id, module_key, true, true
 from public.workspaces w
-cross join (values ('content'),('projects'),('market_data'),('discover')) as modules(module_key)
+cross join (values ('content'),('projects'),('market_data'),('discover'),('learning')) as modules(module_key)
 on conflict (workspace_id, user_id, module_key) do update set can_view=true, can_edit=true;
 
 create or replace function public.is_workspace_owner(target_workspace uuid)

@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   Sparkles,
   ClipboardList,
+  GraduationCap,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -67,6 +68,11 @@ const NAV_ITEMS = [
     href: "/knowledge",
     icon: LibraryBig,
   },
+  {
+    title: "学员学习",
+    href: "/learning",
+    icon: GraduationCap,
+  },
 ]
 
 interface SidebarProps {
@@ -90,7 +96,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
     }).catch(() => undefined)
     return () => { active = false }
   }, [])
-  const visibleNav = allowedModules === null || teamRole === "owner" ? NAV_ITEMS : NAV_ITEMS.filter((item) => (item.href === "/content" && allowedModules.includes("content")) || (item.href === "/projects" && allowedModules.includes("projects")) || (item.href === "/market-data" && allowedModules.includes("market_data")) || (item.href === "/discover" && allowedModules.includes("discover")))
+  const visibleNav = allowedModules === null || teamRole === "owner" ? NAV_ITEMS : NAV_ITEMS.filter((item) => (item.href === "/content" && allowedModules.includes("content")) || (item.href === "/projects" && allowedModules.includes("projects")) || (item.href === "/market-data" && allowedModules.includes("market_data")) || (item.href === "/discover" && allowedModules.includes("discover")) || (item.href === "/learning" && allowedModules.includes("learning")))
 
   return (
     <aside
