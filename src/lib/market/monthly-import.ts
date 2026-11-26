@@ -1,4 +1,5 @@
 import { adxPlatformName } from './monitoring-policy'
+import { boardSamples, compareBoards } from './board-analysis'
 
 export type MonthlyBoardType = 'ad' | 'tk' | 'platform'
 type Row = Record<string, unknown>
@@ -36,4 +37,10 @@ export function monthlyImportRows(fileName: string, type: MonthlyBoardType, rows
   const platform = type === 'platform' ? adxPlatformName(fileName) : undefined
   const sort = fileName.match(/(?:^|[_-])(总素材数|新素材数|播放增量|热度)(?=[_.-]|$)/)?.[1]
   return rows.map(row => ({ ...row, ...(platform && !row['平台'] ? { 平台: platform } : {}), ...(sort ? { 采集排序: sort } : {}) }))
+}
+
+export function monthlyComparisonReady(imports: Parameters<typeof boardSamples>[0], period: string, previous: string) {
+  if (!previous) return false
+  const comparisons = compareBoards(boardSamples(imports.filter(item => item.period_label === period), 'month'), boardSamples(imports.filter(item => item.period_label === previous), 'month'))
+  return comparisons.length > 0 && comparisons.every(item => !item.reason)
 }

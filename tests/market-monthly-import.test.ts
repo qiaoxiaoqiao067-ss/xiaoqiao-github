@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { detectMonthlyBoard, detectSheetMonth, monthFromValue, monthlyImportRows } from '../src/lib/market/monthly-import'
+import { detectMonthlyBoard, detectSheetMonth, monthFromValue, monthlyImportRows, monthlyComparisonReady } from '../src/lib/market/monthly-import'
 import { ADX_PLATFORMS, latestBoardImports, marketBoardKey } from '../src/lib/market/monitoring-policy'
 import { requestedImports } from '../src/lib/market/import-scope'
 import { boardSamples } from '../src/lib/market/board-analysis'
@@ -54,4 +54,13 @@ test('already uploaded exports keep their filename-established total-material so
   const [sample] = boardSamples([{source_name:'ADX月榜:ad:upload',file_name:'短剧排行榜_2026-08_总素材数_Top5000.xlsx',period_label:'2026年8月',created_at:'2026-11-25',raw_rows:[{排名:1,剧名:'Example',标签:'AI仿真人',总素材数:500,新素材数:20}]}],'month')
   assert.equal(sample.sort,'总素材数')
   assert.equal(sample.metric,'总素材数')
+})
+
+test('newly covered platforms and future metadata cannot become aggregate new-market-work claims', () => {
+  const source=(period_label:string,file_name='短剧排行榜_2026-10_总素材数.xlsx',date='2026-08-01')=>({source_name:'ADX月榜:upload',file_name,period_label,created_at:'2026-11-26',raw_rows:[{排名:1,剧名:'Example',标签:'AI仿真人',总素材数:100,播放增量:200,上线时间:date}]})
+  const comparable=[source('2026年9月'),source('2026年10月')]
+  assert.equal(monthlyComparisonReady(comparable,'2026年10月','2026年9月'),true)
+  assert.equal(monthlyComparisonReady([...comparable,source('2026年10月','DramaBox_2026-10_播放增量.xlsx')],'2026年10月','2026年9月'),false)
+  assert.equal(monthlyComparisonReady([source('2026年9月'),source('2026年10月','短剧排行榜_2026-10_总素材数.xlsx','2026-11-01')],'2026年10月','2026年9月'),false)
+  assert.equal(monthlyComparisonReady(comparable,'2026年10月',''),false)
 })
