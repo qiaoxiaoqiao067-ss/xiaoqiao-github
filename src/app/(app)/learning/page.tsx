@@ -20,7 +20,11 @@ type Assignment = {
   steps: Step[]
   status: string
   created_at: string
+  updated_at: string
+  archived_at: string | null
 }
+type ArchivedAssignment = Pick<Assignment, "id" | "title" | "learner_id" | "due_date" | "archived_at" | "created_at">
+type EditDraft = { learnerId: string; title: string; brief: string; cadence: Assignment["cadence"]; dueDate: string }
 type Score = { retrieval: number; evidence: number; reasoning: number; synthesis: number; reflection: number }
 type Submission = {
   id: string
@@ -38,7 +42,7 @@ type Submission = {
   submitted_at: string
 }
 type Learner = { id: string; email: string; name: string | null }
-type LearningData = { role: "owner" | "learner"; assignments: Assignment[]; submissions: Submission[]; learners?: Learner[] }
+type LearningData = { role: "owner" | "learner"; assignments: Assignment[]; submissions: Submission[]; learners?: Learner[]; archivedAssignments?: ArchivedAssignment[] }
 type Draft = { sources: string; findings: string; reasoning: string; reflection: string }
 const emptyDraft: Draft = { sources: "", findings: "", reasoning: "", reflection: "" }
 const cadenceLabel = { daily: "每日", weekly: "每周", extra: "临时" }
@@ -69,6 +73,8 @@ export default function LearningPage() {
   const [cadence, setCadence] = useState<Assignment["cadence"]>("daily")
   const [dueDate, setDueDate] = useState("")
   const [drafts, setDrafts] = useState<Record<string, Draft>>({})
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
 
   const refresh = useCallback(async () => {
     const response = await fetch("/api/learning", { cache: "no-store" })
@@ -82,12 +88,12 @@ export default function LearningPage() {
     refresh().catch((error) => setMessage(error.message)).finally(() => setLoading(false))
   }, [refresh])
 
-  async function post(payload: Record<string, unknown>) {
+  async function post(payload: Record<string, unknown>, method: "POST" | "PATCH" = "POST") {
     setBusy(true)
     setMessage("")
     try {
       const response = await fetch("/api/learning", {
-        method: "POST",
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       })
@@ -126,6 +132,41 @@ export default function LearningPage() {
     if (ok) { setTitle(""); setBrief(""); setDueDate(""); setTemplateIndex(""); setTaskMode("custom") }
   }
 
+  function startEdit(assignment: Assignment) {
+    setEditingId(assignment.id)
+    setEditDraft({
+      learnerId: assignment.learner_id,
+      title: assignment.title,
+      brief: assignment.brief,
+      cadence: assignment.cadence,
+      dueDate: assignment.due_date || "",
+    })
+    setMessage("")
+  }
+
+  function changeEdit<K extends keyof EditDraft>(key: K, value: EditDraft[K]) {
+    setEditDraft((current) => current ? { ...current, [key]: value } : current)
+  }
+
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!editingId || !editDraft) return
+    const ok = await post({
+      action: "update", assignmentId: editingId, ...editDraft, dueDate: editDraft.dueDate || null,
+    }, "PATCH")
+    if (ok) { setEditingId(null); setEditDraft(null) }
+  }
+
+  async function archive(assignment: Assignment) {
+    if (!window.confirm("删除后学员将看不到这项任务。作业记录会保留，你可在回收区恢复。确定删除吗？")) return
+    const ok = await post({ action: "archive", assignmentId: assignment.id }, "PATCH")
+    if (ok && editingId === assignment.id) { setEditingId(null); setEditDraft(null) }
+  }
+
+  async function restore(assignmentId: string) {
+    await post({ action: "restore", assignmentId }, "PATCH")
+  }
+
   function updateDraft(id: string, key: keyof Draft, value: string) {
     setDrafts((old) => ({ ...old, [id]: { ...(old[id] || emptyDraft), [key]: value } }))
   }
@@ -140,6 +181,7 @@ export default function LearningPage() {
   const assignments = data?.assignments || []
   const submissions = data?.submissions || []
   const learners = data?.learners || []
+  const archivedAssignments = data?.archivedAssignments || []
 
   return (
     <AppLayout>
@@ -229,6 +271,43 @@ export default function LearningPage() {
                 </CardHeader>
                 <CardContent className="space-y-5 text-sm">
                   <p className="whitespace-pre-wrap leading-7">{assignment.brief}</p>
+                  {owner && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button type="button" variant="outline" size="sm" disabled={busy || Boolean(submission)} onClick={() => startEdit(assignment)}>修改任务</Button>
+                      <Button type="button" variant="destructive" size="sm" disabled={busy} onClick={() => archive(assignment)}>删除任务</Button>
+                      {submission && <span className="text-xs text-muted-foreground">已有作业，评分依据不可修改；可删除并在回收区恢复。</span>}
+                    </div>
+                  )}
+                  {owner && editingId === assignment.id && editDraft && (
+                    <form onSubmit={saveEdit} className="space-y-4 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                      <h3 className="font-semibold">修改已发布任务</h3>
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <label className="space-y-2">学员
+                          <select className="flex h-10 w-full rounded-full border border-input bg-card px-4" value={editDraft.learnerId} onChange={(event) => changeEdit("learnerId", event.target.value)} required>
+                            {learners.map((item) => <option key={item.id} value={item.id}>{item.name || item.email}</option>)}
+                          </select>
+                        </label>
+                        <label className="space-y-2">任务类型
+                          <select className="flex h-10 w-full rounded-full border border-input bg-card px-4" value={editDraft.cadence} onChange={(event) => changeEdit("cadence", event.target.value as Assignment["cadence"])}>
+                            <option value="daily">每日任务</option><option value="weekly">每周任务</option><option value="extra">临时任务</option>
+                          </select>
+                        </label>
+                        <label className="space-y-2">截止日期
+                          <Input type="date" value={editDraft.dueDate} onChange={(event) => changeEdit("dueDate", event.target.value)} />
+                        </label>
+                      </div>
+                      <label className="block space-y-2">任务标题
+                        <Input value={editDraft.title} onChange={(event) => changeEdit("title", event.target.value)} minLength={3} maxLength={120} required />
+                      </label>
+                      <label className="block space-y-2">任务目标与要求
+                        <Textarea value={editDraft.brief} onChange={(event) => changeEdit("brief", event.target.value)} rows={5} minLength={10} maxLength={4000} required />
+                      </label>
+                      <div className="flex gap-2">
+                        <Button type="submit" disabled={busy}>{busy ? "正在重新拆解…" : "AI 重新拆解并保存"}</Button>
+                        <Button type="button" variant="outline" disabled={busy} onClick={() => { setEditingId(null); setEditDraft(null) }}>取消</Button>
+                      </div>
+                    </form>
+                  )}
                   <div className="space-y-3 rounded-2xl bg-muted/50 p-4">
                     <h3 className="font-medium">执行步骤</h3>
                     {(assignment.steps || []).map((step, index) => (
@@ -287,6 +366,26 @@ export default function LearningPage() {
             )
           })}
         </div>
+        {owner && archivedAssignments.length > 0 && (
+          <section className="space-y-3">
+            <h2 className="text-lg font-semibold">回收区</h2>
+            <p className="text-sm text-muted-foreground">这里的任务已从学员页面移除，原有作业仍保留。</p>
+            {archivedAssignments.map((assignment) => {
+              const learner = learners.find((item) => item.id === assignment.learner_id)
+              return (
+                <Card key={assignment.id} className="border-dashed">
+                  <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+                    <div>
+                      <div className="font-medium">{assignment.title}</div>
+                      <div className="text-xs text-muted-foreground">{learner?.name || learner?.email || "学员"} · 删除于 {assignment.archived_at?.slice(0, 10)}</div>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => restore(assignment.id)}>恢复任务</Button>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </section>
+        )}
       </div>
     </AppLayout>
   )
