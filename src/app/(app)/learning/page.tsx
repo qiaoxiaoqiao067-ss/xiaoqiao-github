@@ -43,15 +43,17 @@ type Draft = { sources: string; findings: string; reasoning: string; reflection:
 const emptyDraft: Draft = { sources: "", findings: "", reasoning: "", reflection: "" }
 const cadenceLabel = { daily: "每日", weekly: "每周", extra: "临时" }
 const scoreLabel: Record<keyof Score, string> = {
-  retrieval: "信息检索", evidence: "证据质量", reasoning: "逻辑推理", synthesis: "综合迁移", reflection: "学习复盘",
+  retrieval: "信息获取", evidence: "实践与证据", reasoning: "逻辑与思考", synthesis: "迁移应用", reflection: "开放复盘",
 }
 
 const trainingTemplates = [
-  { title: "第 1 周：建立短剧信息检索与证据台账", cadence: "weekly" as const, brief: "围绕一个具体短剧问题（例如某类题材为何近期受关注），至少检索 3 类独立来源：平台原始信息、行业报道或数据、创作者或观众反馈。记录链接、发布日期、检索日期、关键说法、可核验程度和来源之间的冲突。周末提交一页结论，明确事实、推断、反例与尚待验证的问题。" },
-  { title: "第 2 周：拆解短剧开场与因果链", cadence: "weekly" as const, brief: "选择 2 部不同题材的短剧，观察各自前 3 集。逐集记录人物目标、障碍、冲突升级、情绪转折与结尾钩子。用具体场景作为证据，比较哪些设计更可能推动继续观看，提出至少 1 个相反解释，最后归纳可迁移的叙事原则。" },
-  { title: "第 3 周：验证市场判断", cadence: "weekly" as const, brief: "选取一个短剧行业判断，例如题材热度、平台分发或变现模式。检索原始数据和不同立场的公开资料，标注样本范围与时间。写出支持与反对证据，区分相关性与因果性，给出有条件的结论与下一步验证方案。" },
-  { title: "第 4 周：把研究方法迁移到新领域", cadence: "weekly" as const, brief: "选择短剧之外的一个相邻领域，如漫剧、短视频或网文。提出一个可验证的问题，独立设计检索词与来源清单，建立证据台账，比较至少 2 种解释，并写出结论、局限和可执行建议。复盘与短剧研究方法的共通点和差异。" },
-  { title: "今日训练：核查一条短剧行业说法", cadence: "daily" as const, brief: "找出一条近期常见的短剧行业说法。追溯它最早可找到的出处，寻找至少 2 个独立来源和 1 个可能的反例。写清哪些是已核实事实、哪些是推断，并给出暂时结论与置信度。" },
+  { title: "AI 工具实操：用两种方法完成同一交付", cadence: "weekly" as const, brief: "选择一项真实短剧工作，例如整理选题情报、生成角色小传或制作片段分镜。至少尝试一种 AI 工具和一种不用该工具的做法；记录提示词、输入资料、关键操作、输出版本、失败与修正。提交可查看的作品或过程记录，并比较效率、质量、错误风险与适用边界。最后说明你会如何改进工作流。" },
+  { title: "短剧市场观察：多看剧并形成自己的判断", cadence: "weekly" as const, brief: "一周内完整观看至少 3 部不同题材、不同平台或不同受众定位的短剧，记录剧名、平台、集数、观看日期与可查来源。观察开场、题材、人群、宣发和商业模式，检索必要的市场资料。区分实际看到的内容、平台公开数据、行业传闻和个人判断；比较作品差异，提出一个可验证的市场结论及反例。" },
+  { title: "内容拆解：人物、人性与世界观", cadence: "weekly" as const, brief: "选择 2 部价值观或题材不同的短剧，认真观看并拆解前 3 集及一个关键转折。逐段记录人物欲望、恐惧、关系、选择、代价、冲突因果、情绪钩子与作品默认的世界规则。引用具体场景，不只复述剧情。分别站在不同角色、不同观众和文化背景下解释同一冲突，说明你认同与不认同的地方及依据。" },
+  { title: "动手产出：从观察到可交付作品", cadence: "weekly" as const, brief: "从本周看片或市场观察中选一个洞察，制作一份可被他人使用的短剧交付物：一卡、人物关系图、前三集节拍表、短场景剧本或分镜样稿，任选其一。提交初稿、收到或自拟的反馈、修改稿和改动理由。说明哪些判断来自证据，哪些是创作选择，并列出下一轮验证办法。" },
+  { title: "多元思考：同一故事的不同解释", cadence: "weekly" as const, brief: "选一个容易产生分歧的短剧人物或情节，至少从 3 种不同立场理解它，例如人物自身、对立角色、不同年龄或文化背景的观众。先准确复述各方最有力的理由，再指出各方可能忽略的事实与代价。寻找剧情场景和观众反馈作为依据，提出两个不同的改写方向，并评估各自会影响哪些受众。" },
+  { title: "今日看片：一集里的选择与代价", cadence: "daily" as const, brief: "观看一部你此前没看过的短剧至少 2 集，记录剧名、平台、观看日期和两个具体场景。写出主角想要什么、遇到什么阻碍、做了什么选择、付出什么代价。再从另一位角色或另一类观众的角度解释同一场景，最后提出一个你想继续验证的问题。" },
+  { title: "今日 AI 实操：做一版并复盘", cadence: "daily" as const, brief: "选用一个 AI 工具完成一个小型短剧工作交付，例如 100 字卖点、一张人物关系表或一段分镜说明。保留提示词、关键输入、原始输出和修改后版本。指出至少 2 个工具做对或做错的地方，说明你如何核查和修改，并给出下一次更好的操作步骤。" },
 ]
 
 export default function LearningPage() {
@@ -62,6 +64,8 @@ export default function LearningPage() {
   const [learnerId, setLearnerId] = useState("")
   const [title, setTitle] = useState("")
   const [brief, setBrief] = useState("")
+  const [taskMode, setTaskMode] = useState<"custom" | "template">("custom")
+  const [templateIndex, setTemplateIndex] = useState("")
   const [cadence, setCadence] = useState<Assignment["cadence"]>("daily")
   const [dueDate, setDueDate] = useState("")
   const [drafts, setDrafts] = useState<Record<string, Draft>>({})
@@ -100,10 +104,25 @@ export default function LearningPage() {
     }
   }
 
+  function chooseCustom() {
+    setTaskMode("custom")
+    setTemplateIndex("")
+    setTitle("")
+    setBrief("")
+    setCadence("daily")
+    setDueDate("")
+  }
+
+  function chooseTemplate(value: string) {
+    setTemplateIndex(value)
+    const item = trainingTemplates[Number(value)]
+    if (value !== "" && item) { setTitle(item.title); setBrief(item.brief); setCadence(item.cadence) }
+  }
+
   async function publish(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const ok = await post({ action: "publish", learnerId, title, brief, cadence, dueDate: dueDate || null })
-    if (ok) { setTitle(""); setBrief(""); setDueDate("") }
+    if (ok) { setTitle(""); setBrief(""); setDueDate(""); setTemplateIndex(""); setTaskMode("custom") }
   }
 
   function updateDraft(id: string, key: keyof Draft, value: string) {
@@ -127,7 +146,7 @@ export default function LearningPage() {
         <PageHero
           eyebrow="Yunxia Learning"
           title={owner ? "学习任务管理" : "我的学习空间"}
-          description={owner ? "发布训练任务，查看学员的检索、分析与成长记录。" : "按步骤自主检索和思考，提交依据、推理与复盘。"}
+          description={owner ? "自定义任务或选用训练模板，覆盖 AI 工具、市场、内容、动手与多元思考。" : "多看剧、多动手，记录观察、作品、判断与复盘。"}
         />
         {message && <div role="status" className="rounded-2xl border border-primary/20 bg-primary/5 px-5 py-3 text-sm">{message}</div>}
         {loading && <p className="text-sm text-muted-foreground">正在加载学习任务…</p>}
@@ -137,12 +156,22 @@ export default function LearningPage() {
             <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Sparkles className="h-5 w-5 text-primary" />发布学习任务</CardTitle></CardHeader>
             <CardContent>
               <form onSubmit={publish} className="space-y-4">
-                <label className="block space-y-2 text-sm">可选训练模板
-                  <select className="flex h-10 w-full rounded-full border border-input bg-card px-4" defaultValue="" onChange={(event) => { const item = event.target.value === "" ? undefined : trainingTemplates[Number(event.target.value)]; if (item) { setTitle(item.title); setBrief(item.brief); setCadence(item.cadence) } }}>
-                    <option value="">自行填写任务，或选择模板</option>
-                    {trainingTemplates.map((item, index) => <option key={item.title} value={index}>{item.title}</option>)}
-                  </select>
-                </label>
+                <div className="space-y-3">
+                  <div className="flex flex-wrap gap-2" role="group" aria-label="任务创建方式">
+                    <Button type="button" variant={taskMode === "custom" ? "default" : "outline"} onClick={chooseCustom}>自行编写任务</Button>
+                    <Button type="button" variant={taskMode === "template" ? "default" : "outline"} onClick={() => setTaskMode("template")}>从训练模板开始</Button>
+                  </div>
+                  {taskMode === "template" ? (
+                    <label className="block space-y-2 text-sm">选择训练方向
+                      <select className="flex h-10 w-full rounded-full border border-input bg-card px-4" value={templateIndex} onChange={(event) => chooseTemplate(event.target.value)}>
+                        <option value="">选择一个模板后，仍可在下方改写</option>
+                        {trainingTemplates.map((item, index) => <option key={item.title} value={index}>{item.title}</option>)}
+                      </select>
+                    </label>
+                  ) : (
+                    <p className="rounded-2xl bg-primary/5 px-4 py-3 text-sm text-muted-foreground">直接在下方填写标题和具体要求；AI 会根据你写的内容拆解，不限制任务主题。</p>
+                  )}
+                </div>
                 <div className="grid gap-4 md:grid-cols-3">
                   <label className="space-y-2 text-sm">学员
                     <select className="flex h-10 w-full rounded-full border border-input bg-card px-4" value={learnerId} onChange={(event) => setLearnerId(event.target.value)} required>
@@ -159,11 +188,11 @@ export default function LearningPage() {
                     <Input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
                   </label>
                 </div>
-                <label className="block space-y-2 text-sm">任务标题
-                  <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例：比较两部短剧前 3 集的留存钩子" maxLength={120} required />
+                <label className="block space-y-2 text-sm">任务标题（可自行填写）
+                  <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如：观看三部不同题材短剧并做人物选择分析" maxLength={120} required />
                 </label>
-                <label className="block space-y-2 text-sm">任务目标与要求
-                  <Textarea value={brief} onChange={(event) => setBrief(event.target.value)} placeholder="写清目标、范围和交付标准。AI 会把任务拆成可执行的检索与分析步骤。" rows={5} maxLength={4000} required />
+                <label className="block space-y-2 text-sm">任务目标与要求（可自行填写）
+                  <Textarea value={brief} onChange={(event) => setBrief(event.target.value)} placeholder="写清要看什么剧、使用什么 AI 工具、动手做什么、从哪些视角思考，以及希望提交什么成果。AI 会按你的要求拆解步骤。" rows={5} maxLength={4000} required />
                 </label>
                 <Button type="submit" disabled={busy || !learnerId}>{busy ? "正在拆解并发布…" : "AI 拆解并发布"}</Button>
               </form>
@@ -213,9 +242,9 @@ export default function LearningPage() {
                     <div className="space-y-4 border-t border-border pt-5">
                       <h3 className="font-semibold">提交与反馈</h3>
                       <div className="grid gap-3 md:grid-cols-2">
-                        <div><div className="font-medium">来源与链接</div><p className="mt-1 whitespace-pre-wrap text-muted-foreground">{submission.sources}</p></div>
-                        <div><div className="font-medium">检索发现</div><p className="mt-1 whitespace-pre-wrap text-muted-foreground">{submission.findings}</p></div>
-                        <div><div className="font-medium">判断与推理</div><p className="mt-1 whitespace-pre-wrap text-muted-foreground">{submission.reasoning}</p></div>
+                        <div><div className="font-medium">资料与过程</div><p className="mt-1 whitespace-pre-wrap text-muted-foreground">{submission.sources}</p></div>
+                        <div><div className="font-medium">观察或作品</div><p className="mt-1 whitespace-pre-wrap text-muted-foreground">{submission.findings}</p></div>
+                        <div><div className="font-medium">分析与判断</div><p className="mt-1 whitespace-pre-wrap text-muted-foreground">{submission.reasoning}</p></div>
                         <div><div className="font-medium">学习复盘</div><p className="mt-1 whitespace-pre-wrap text-muted-foreground">{submission.reflection || "未填写"}</p></div>
                       </div>
                       {submission.review_status === "graded" ? (
@@ -237,16 +266,16 @@ export default function LearningPage() {
                   ) : !owner ? (
                     <form onSubmit={(event) => submit(event, assignment.id)} className="space-y-4 border-t border-border pt-5">
                       <h3 className="font-semibold">提交作业</h3>
-                      <label className="block space-y-2">来源与链接（注明发布时间、检索日期和可信度）
+                      <label className="block space-y-2">参考资料、观看记录或工具使用过程（附链接或关键输入）
                         <Textarea value={draft.sources} onChange={(event) => updateDraft(assignment.id, "sources", event.target.value)} rows={4} minLength={20} required />
                       </label>
-                      <label className="block space-y-2">检索发现（具体事实、数据和出处）
+                      <label className="block space-y-2">观察结果或动手作品（写清具体内容与交付链接）
                         <Textarea value={draft.findings} onChange={(event) => updateDraft(assignment.id, "findings", event.target.value)} rows={4} minLength={30} required />
                       </label>
-                      <label className="block space-y-2">判断与推理（区分事实、推断、反例和结论）
+                      <label className="block space-y-2">分析与判断（人物动机、因果、证据、不同解释）
                         <Textarea value={draft.reasoning} onChange={(event) => updateDraft(assignment.id, "reasoning", event.target.value)} rows={5} minLength={30} required />
                       </label>
-                      <label className="block space-y-2">学习复盘（哪里还不确定、下次怎么查）
+                      <label className="block space-y-2">学习复盘（错误、其他视角和下一次改进）
                         <Textarea value={draft.reflection} onChange={(event) => updateDraft(assignment.id, "reflection", event.target.value)} rows={3} />
                       </label>
                       <Button type="submit" disabled={busy}>{busy ? "正在提交与初评…" : "提交作业"}</Button>
