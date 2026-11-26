@@ -105,6 +105,7 @@ export default function LearningPage() {
   }
 
   function chooseCustom() {
+    if (taskMode === "custom") return
     setTaskMode("custom")
     setTemplateIndex("")
     setTitle("")
