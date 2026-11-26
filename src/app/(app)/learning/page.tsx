@@ -22,6 +22,7 @@ type Assignment = {
   created_at: string
   updated_at: string
   archived_at: string | null
+  accepted_at: string | null
 }
 type ArchivedAssignment = Pick<Assignment, "id" | "title" | "learner_id" | "due_date" | "archived_at" | "created_at">
 type EditDraft = { learnerId: string; title: string; brief: string; cadence: Assignment["cadence"]; dueDate: string }
@@ -167,6 +168,10 @@ export default function LearningPage() {
     await post({ action: "restore", assignmentId }, "PATCH")
   }
 
+  async function accept(assignmentId: string) {
+    await post({ action: "accept", assignmentId })
+  }
+
   function updateDraft(id: string, key: keyof Draft, value: string) {
     setDrafts((old) => ({ ...old, [id]: { ...(old[id] || emptyDraft), [key]: value } }))
   }
@@ -243,10 +248,11 @@ export default function LearningPage() {
           </Card>
         )}
 
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Card><CardContent className="flex items-center gap-4 py-5"><BookOpen className="h-6 w-6 text-primary" /><div><div className="text-2xl font-semibold">{assignments.length}</div><div className="text-sm text-muted-foreground">已发布任务</div></div></CardContent></Card>
           <Card><CardContent className="flex items-center gap-4 py-5"><ClipboardList className="h-6 w-6 text-primary" /><div><div className="text-2xl font-semibold">{assignments.filter((item) => !submissions.some((entry) => entry.assignment_id === item.id)).length}</div><div className="text-sm text-muted-foreground">待提交</div></div></CardContent></Card>
           <Card><CardContent className="flex items-center gap-4 py-5"><CheckCircle2 className="h-6 w-6 text-primary" /><div><div className="text-2xl font-semibold">{submissions.filter((item) => item.review_status === "graded").length}</div><div className="text-sm text-muted-foreground">已初评</div></div></CardContent></Card>
+          <Card><CardContent className="flex items-center gap-4 py-5"><ClipboardList className="h-6 w-6 text-amber-600" /><div><div className="text-2xl font-semibold">{assignments.filter((item) => !item.accepted_at).length}</div><div className="text-sm text-muted-foreground">未确认接收</div></div></CardContent></Card>
         </div>
 
         <div className="space-y-4">
@@ -266,11 +272,22 @@ export default function LearningPage() {
                       <div className="text-xs font-medium text-primary">{cadenceLabel[assignment.cadence]}任务 · {assignment.due_date ? "截止 " + assignment.due_date : "未设截止日期"}{owner && learner ? " · " + (learner.name || learner.email) : ""}</div>
                       <CardTitle className="text-lg">{assignment.title}</CardTitle>
                     </div>
-                    <span className="rounded-full bg-secondary px-3 py-1 text-xs">{submission ? (submission.review_status === "graded" ? "已初评" : "待初评") : "待提交"}</span>
+                    <div className="flex flex-wrap gap-2">
+                      <span className={`rounded-full px-3 py-1 text-xs ${assignment.accepted_at ? "bg-emerald-500/10 text-emerald-700" : "bg-amber-500/10 text-amber-700"}`}>
+                        {assignment.accepted_at ? "已确认接收" : "未确认"}
+                      </span>
+                      <span className="rounded-full bg-secondary px-3 py-1 text-xs">{submission ? (submission.review_status === "graded" ? "已初评" : "待初评") : "待提交"}</span>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-5 text-sm">
                   <p className="whitespace-pre-wrap leading-7">{assignment.brief}</p>
+                  {!owner && !assignment.accepted_at && !submission && (
+                    <div className="space-y-2 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
+                      <p className="text-muted-foreground">请先阅读任务要求和执行步骤，再确认接收。</p>
+                      <Button type="button" disabled={busy} onClick={() => accept(assignment.id)}>{busy ? "正在确认…" : "确认接收任务"}</Button>
+                    </div>
+                  )}
                   {owner && (
                     <div className="flex flex-wrap items-center gap-2">
                       <Button type="button" variant="outline" size="sm" disabled={busy || Boolean(submission)} onClick={() => startEdit(assignment)}>修改任务</Button>
@@ -343,7 +360,7 @@ export default function LearningPage() {
                         </div>
                       )}
                     </div>
-                  ) : !owner ? (
+                  ) : !owner && assignment.accepted_at ? (
                     <form onSubmit={(event) => submit(event, assignment.id)} className="space-y-4 border-t border-border pt-5">
                       <h3 className="font-semibold">提交作业</h3>
                       <label className="block space-y-2">参考资料、观看记录或工具使用过程（附链接或关键输入）
