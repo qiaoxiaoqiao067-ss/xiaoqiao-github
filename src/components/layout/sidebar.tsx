@@ -88,13 +88,18 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
   const [teamRole, setTeamRole] = useState<string | null>(null)
   useEffect(() => {
     let active = true
-    fetch("/api/team", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).then((data) => {
-      if (!active || !data?.configured) return
-      if(data.role === "owner"){setTeamRole("owner");setAllowedModules(null);return}
-      setTeamRole(data.role || "collaborator")
-      setAllowedModules(data.status === "active" ? (data.modules || []).filter((module: { canView: boolean }) => module.canView).map((module: { key: string }) => module.key) : [])
-    }).catch(() => undefined)
-    return () => { active = false }
+    const load = () => {
+      fetch("/api/team", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).then((data) => {
+        if (!active || !data?.configured) return
+        if (data.role === "owner") { setTeamRole("owner"); setAllowedModules(null); return }
+        setTeamRole(data.role || "collaborator")
+        setAllowedModules(data.status === "active" ? (data.modules || []).filter((module: { canView: boolean }) => module.canView).map((module: { key: string }) => module.key) : [])
+      }).catch(() => undefined)
+    }
+    load()
+    const timer = window.setInterval(load, 15000)
+    window.addEventListener("focus", load)
+    return () => { active = false; clearInterval(timer); window.removeEventListener("focus", load) }
   }, [])
   const visibleNav = allowedModules === null || teamRole === "owner" ? NAV_ITEMS : NAV_ITEMS.filter((item) => (item.href === "/content" && allowedModules.includes("content")) || (item.href === "/projects" && allowedModules.includes("projects")) || (item.href === "/market-data" && allowedModules.includes("market_data")) || (item.href === "/discover" && allowedModules.includes("discover")) || (item.href === "/learning" && allowedModules.includes("learning")))
 
