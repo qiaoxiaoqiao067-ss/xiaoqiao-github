@@ -46,6 +46,14 @@ const scoreLabel: Record<keyof Score, string> = {
   retrieval: "信息检索", evidence: "证据质量", reasoning: "逻辑推理", synthesis: "综合迁移", reflection: "学习复盘",
 }
 
+const trainingTemplates = [
+  { title: "第 1 周：建立短剧信息检索与证据台账", cadence: "weekly" as const, brief: "围绕一个具体短剧问题（例如某类题材为何近期受关注），至少检索 3 类独立来源：平台原始信息、行业报道或数据、创作者或观众反馈。记录链接、发布日期、检索日期、关键说法、可核验程度和来源之间的冲突。周末提交一页结论，明确事实、推断、反例与尚待验证的问题。" },
+  { title: "第 2 周：拆解短剧开场与因果链", cadence: "weekly" as const, brief: "选择 2 部不同题材的短剧，观察各自前 3 集。逐集记录人物目标、障碍、冲突升级、情绪转折与结尾钩子。用具体场景作为证据，比较哪些设计更可能推动继续观看，提出至少 1 个相反解释，最后归纳可迁移的叙事原则。" },
+  { title: "第 3 周：验证市场判断", cadence: "weekly" as const, brief: "选取一个短剧行业判断，例如题材热度、平台分发或变现模式。检索原始数据和不同立场的公开资料，标注样本范围与时间。写出支持与反对证据，区分相关性与因果性，给出有条件的结论与下一步验证方案。" },
+  { title: "第 4 周：把研究方法迁移到新领域", cadence: "weekly" as const, brief: "选择短剧之外的一个相邻领域，如漫剧、短视频或网文。提出一个可验证的问题，独立设计检索词与来源清单，建立证据台账，比较至少 2 种解释，并写出结论、局限和可执行建议。复盘与短剧研究方法的共通点和差异。" },
+  { title: "今日训练：核查一条短剧行业说法", cadence: "daily" as const, brief: "找出一条近期常见的短剧行业说法。追溯它最早可找到的出处，寻找至少 2 个独立来源和 1 个可能的反例。写清哪些是已核实事实、哪些是推断，并给出暂时结论与置信度。" },
+]
+
 export default function LearningPage() {
   const [data, setData] = useState<LearningData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -129,6 +137,12 @@ export default function LearningPage() {
             <CardHeader><CardTitle className="flex items-center gap-2 text-lg"><Sparkles className="h-5 w-5 text-primary" />发布学习任务</CardTitle></CardHeader>
             <CardContent>
               <form onSubmit={publish} className="space-y-4">
+                <label className="block space-y-2 text-sm">可选训练模板
+                  <select className="flex h-10 w-full rounded-full border border-input bg-card px-4" defaultValue="" onChange={(event) => { const item = trainingTemplates[Number(event.target.value)]; if (item) { setTitle(item.title); setBrief(item.brief); setCadence(item.cadence) } }}>
+                    <option value="">自行填写任务，或选择模板</option>
+                    {trainingTemplates.map((item, index) => <option key={item.title} value={index}>{item.title}</option>)}
+                  </select>
+                </label>
                 <div className="grid gap-4 md:grid-cols-3">
                   <label className="space-y-2 text-sm">学员
                     <select className="flex h-10 w-full rounded-full border border-input bg-card px-4" value={learnerId} onChange={(event) => setLearnerId(event.target.value)} required>
